@@ -1,5 +1,6 @@
 .env
 .env.local
+.venv/
 data/runs/
 *.sqlite
 *.sqlite3

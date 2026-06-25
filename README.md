@@ -14,24 +14,25 @@ That asks whether a contract could have been bought at the ask and later sold at
 
 ```powershell
 cd C:\workspace\options_alert_engine
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env.local
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
 
 Edit `.env.local` for local settings only. Do not put broker passwords in the repo.
+
+If normal `python` commands fail in PowerShell, use the scripts. See `LAUNCH_GUIDE.md`.
 
 ## Preflight
 
 Mock mode:
 
 ```powershell
-python -m src.main preflight --mock
+powershell -ExecutionPolicy Bypass -File .\scripts\mock_preflight.ps1
 ```
 
 IBKR mode:
 
 ```powershell
-python -m src.main preflight --provider ibkr
+powershell -ExecutionPolicy Bypass -File .\scripts\ibkr_preflight.ps1
 ```
 
 IBKR assumes TWS or IB Gateway is already open and manually logged in. Enable API access in TWS/Gateway and use the correct paper/live port, usually `7497` for paper TWS and `7496` for live TWS. U.S. options need OPRA data, and underlying stocks need live stock data.
@@ -41,13 +42,13 @@ IBKR assumes TWS or IB Gateway is already open and manually logged in. Enable AP
 Single signal:
 
 ```powershell
-python -m src.main collect-signal --symbol BEAM --direction CALL --strike 40 --expiry 2026-07-17 --signal-premium 0.40 --stock-price 36.50 --provider mock --duration-seconds 30
+.\scripts\run.ps1 collect-signal --symbol BEAM --direction CALL --strike 40 --expiry 2026-07-17 --signal-premium 0.40 --stock-price 36.50 --provider mock --duration-seconds 30
 ```
 
 CSV file:
 
 ```powershell
-python -m src.main collect-file --signals-file data/sample_signals_today.csv --provider mock --duration-seconds 30
+.\scripts\mock_collect.ps1
 ```
 
 CSV columns:
