@@ -1,0 +1,3 @@
+timestamp_local,symbol,direction,signal_strike,expiry,signal_premium,stock_price_at_signal
+2026-06-25T10:05:00-05:00,BEAM,CALL,40,2026-07-17,0.40,36.50
+2026-06-25T10:07:00-05:00,VRNS,CALL,40,2026-07-17,0.40,35.60
