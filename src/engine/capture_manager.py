@@ -96,9 +96,11 @@ def collect_signals(
         while True:
             if _capture_end_reached(capture_end_time, tz):
                 break
-            if duration_seconds is not None and time.monotonic() - start >= duration_seconds:
+            if _duration_reached(start, duration_seconds):
                 break
             for runtime in runtimes:
+                if _capture_end_reached(capture_end_time, tz) or _duration_reached(start, duration_seconds):
+                    break
                 stock = provider.get_stock_quote_for_signal(
                     runtime.signal,
                     fallback_price=runtime.signal.stock_price_at_signal,
@@ -107,6 +109,8 @@ def collect_signals(
                 storage.append_stock_tick(stock_tick)
                 latest_stock_ticks[runtime.signal.signal_id] = stock_tick
                 for contract_runtime in runtime.contracts:
+                    if _capture_end_reached(capture_end_time, tz) or _duration_reached(start, duration_seconds):
+                        break
                     if not contract_runtime.active:
                         continue
                     try:
@@ -121,7 +125,7 @@ def collect_signals(
             if loops % 5 == 0:
                 console.render([runtime.signal for runtime in runtimes], latest_stock_ticks, latest_option_ticks)
             loops += 1
-            if duration_seconds is not None and time.monotonic() - start >= duration_seconds:
+            if _duration_reached(start, duration_seconds):
                 break
             if _capture_end_reached(capture_end_time, tz):
                 break
@@ -286,6 +290,10 @@ def _wait_until_capture_start(
 
 def _capture_end_reached(capture_end_time: datetime | None, tz: ZoneInfo) -> bool:
     return bool(capture_end_time and datetime.now(tz) >= capture_end_time)
+
+
+def _duration_reached(start: float, duration_seconds: int | None) -> bool:
+    return bool(duration_seconds is not None and time.monotonic() - start >= duration_seconds)
 
 
 def _collect_initial_news(signal: TradeSignal, config: AppConfig, storage: RunStorage, console: LiveConsole) -> None:

@@ -25,6 +25,7 @@ class IBKRProvider(BaseDataProvider):
         self.timezone = timezone
         self.ib = None
         self._stock_contracts: dict[str, object] = {}
+        self._option_contracts: dict[str, object] = {}
 
     def connect(self) -> None:
         if self.ib is not None and self.ib.isConnected():
@@ -140,32 +141,7 @@ class IBKRProvider(BaseDataProvider):
 
     def get_option_quote(self, contract: OptionContract, stock_last: float | None = None) -> OptionQuote:
         self.connect()
-        from ib_insync import Contract, Option
-
-        right = "C" if contract.option_type.value == "CALL" else "P"
-        if contract.con_id:
-            ib_contract = Contract(conId=contract.con_id, exchange=contract.exchange or "SMART", currency=contract.currency)
-        else:
-            ib_contract = Option(
-                contract.underlying_symbol,
-                contract.expiry.strftime("%Y%m%d"),
-                contract.strike,
-                right,
-                contract.exchange or "SMART",
-                currency=contract.currency,
-            )
-            if contract.trading_class:
-                ib_contract.tradingClass = contract.trading_class
-        qualified = self.ib.qualifyContracts(ib_contract)
-        if not qualified:
-            raise ProviderError(f"IBKR could not qualify option {contract.display}")
-        qualified_contract = qualified[0]
-        contract.con_id = getattr(qualified_contract, "conId", None) or contract.con_id
-        contract.local_symbol = getattr(qualified_contract, "localSymbol", None) or contract.local_symbol
-        contract.trading_class = getattr(qualified_contract, "tradingClass", None) or contract.trading_class
-        contract.exchange = getattr(qualified_contract, "exchange", None) or contract.exchange
-        contract.primary_exchange = getattr(qualified_contract, "primaryExchange", None) or contract.primary_exchange
-        contract.currency = getattr(qualified_contract, "currency", None) or contract.currency
+        qualified_contract = self._qualified_option_contract(contract)
         ticker = self.ib.reqMktData(qualified_contract, "100,101,106", False, False)
         self.ib.sleep(1.0)
         bid = _clean_number(ticker.bid)
@@ -241,6 +217,42 @@ class IBKRProvider(BaseDataProvider):
         self._stock_contracts[_stock_cache_key(signal)] = contract
         self._stock_contracts[f"symbol:{signal.symbol.upper()}"] = contract
 
+    def _qualified_option_contract(self, contract: OptionContract):
+        key = _option_cache_key(contract)
+        cached = self._option_contracts.get(key)
+        if cached is not None:
+            return cached
+
+        from ib_insync import Contract, Option
+
+        right = "C" if contract.option_type.value == "CALL" else "P"
+        if contract.con_id:
+            ib_contract = Contract(conId=contract.con_id, exchange=contract.exchange or "SMART", currency=contract.currency)
+        else:
+            ib_contract = Option(
+                contract.underlying_symbol,
+                contract.expiry.strftime("%Y%m%d"),
+                contract.strike,
+                right,
+                contract.exchange or "SMART",
+                currency=contract.currency,
+            )
+            if contract.trading_class:
+                ib_contract.tradingClass = contract.trading_class
+        qualified = self.ib.qualifyContracts(ib_contract)
+        if not qualified:
+            raise ProviderError(f"IBKR could not qualify option {contract.display}")
+        qualified_contract = qualified[0]
+        contract.con_id = getattr(qualified_contract, "conId", None) or contract.con_id
+        contract.local_symbol = getattr(qualified_contract, "localSymbol", None) or contract.local_symbol
+        contract.trading_class = getattr(qualified_contract, "tradingClass", None) or contract.trading_class
+        contract.exchange = getattr(qualified_contract, "exchange", None) or contract.exchange
+        contract.primary_exchange = getattr(qualified_contract, "primaryExchange", None) or contract.primary_exchange
+        contract.currency = getattr(qualified_contract, "currency", None) or contract.currency
+        self._option_contracts[key] = qualified_contract
+        self._option_contracts[_option_cache_key(contract)] = qualified_contract
+        return qualified_contract
+
 
 def _select_stock_detail(details, signal: TradeSignal):
     preferred_primary = [
@@ -279,6 +291,21 @@ def _stock_cache_key(signal: TradeSignal) -> str:
         signal.currency or "USD",
     ]
     return "signal:" + "|".join(part.upper() for part in parts)
+
+
+def _option_cache_key(contract: OptionContract) -> str:
+    if contract.con_id:
+        return f"conid:{contract.con_id}"
+    parts = [
+        contract.underlying_symbol,
+        contract.expiry.isoformat(),
+        str(contract.strike),
+        contract.option_type.value,
+        contract.exchange or "SMART",
+        contract.currency or "USD",
+        contract.trading_class or "",
+    ]
+    return "option:" + "|".join(part.upper() for part in parts)
 
 
 def _clean_number(value) -> float | None:

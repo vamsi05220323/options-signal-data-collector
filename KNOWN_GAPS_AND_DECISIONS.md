@@ -169,6 +169,43 @@ Ranking impact:
 
 No ranking formula change. The skipped contract simply has no quote rows and therefore cannot become a ranked opportunity.
 
+## Implemented: Cache Qualified IBKR Option Contracts
+
+During the 2026-06-26 live `MAN` test, repeated option qualification calls produced noisy `ib_insync` contract-detail decoder errors while IBKR option connectivity was unstable.
+
+Fix:
+
+The IBKR provider now caches a qualified option contract after the first successful qualification and reuses it for later quote pulls in the same run.
+
+Reason:
+
+Live collection should spend time pulling quotes, not repeatedly re-resolving the same option contract identity.
+
+Ranking impact:
+
+No ranking formula change.
+
+## Current Known Gap: IBKR Option Farm Connectivity Can Break A Run
+
+During the first 2026-06-26 `MAN` 40 CALL capture, TWS reported that the `usopt` market-data farm was not connected/restored. The run folder was correctly isolated and all files were written, but option bid/ask values were blank, so every option quote was invalid.
+
+Practical meaning:
+
+If `summary_by_signal.csv` shows `number_of_valid_contracts=0`, the run should not be trusted for trading-quality research even if files exist.
+
+Recommended future fix:
+
+Add a live health monitor that flags:
+
+```text
+stock quote ok
+option quote ok
+option farm disconnected
+valid option quote ratio too low
+```
+
+and prints a clear run-quality status at the end.
+
 ## Current Known Gap: Expiration And Trading Class Ambiguity
 
 IBKR can have multiple option trading classes or expiration classes for the same apparent symbol/date. The app now stores qualified option identity after quote qualification, but the chain-selection step still chooses by standard symbol, expiry, strike, and right.
