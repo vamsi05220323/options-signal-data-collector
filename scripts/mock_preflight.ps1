@@ -1,2 +1,3 @@
 $ErrorActionPreference = "Stop"
 & (Join-Path $PSScriptRoot "run.ps1") preflight --mock
+exit $LASTEXITCODE

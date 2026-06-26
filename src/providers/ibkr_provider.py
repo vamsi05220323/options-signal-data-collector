@@ -33,7 +33,7 @@ class IBKRProvider(BaseDataProvider):
             raise ProviderError("ib_insync is not installed. Run: pip install ib_insync") from exc
         self.ib = IB()
         try:
-            self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=5)
+            self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=5, readonly=True)
         except Exception as exc:  # pragma: no cover - requires TWS/Gateway
             raise ProviderError(f"Could not connect to IBKR at {self.host}:{self.port}: {exc}") from exc
 

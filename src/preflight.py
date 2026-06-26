@@ -63,8 +63,16 @@ def _run_ibkr_preflight(config: AppConfig) -> int:
     print(f"stock_quote bid={stock.bid} ask={stock.ask} last={stock.last}")
     print(f"option_chain strikes={len(strikes)}")
     print(f"option_quote {contracts[0].display} bid={quote.bid} ask={quote.ask} last={quote.last}")
+    missing: list[str] = []
+    if stock.bid is None or stock.ask is None:
+        missing.append("stock bid/ask")
     if quote.bid is None or quote.ask is None:
-        print("warning=option bid/ask missing; OPRA or market data permissions may be delayed/missing")
+        missing.append("option bid/ask")
+    if missing:
+        print("ibkr connection ok")
+        print(f"market_data_incomplete={', '.join(missing)}")
+        print("Most likely causes: market is closed, delayed-only data, missing OPRA options data, or missing US stock top-of-book data.")
+        return 2
     print("ibkr preflight ok")
     return 0
 

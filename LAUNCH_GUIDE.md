@@ -208,6 +208,37 @@ You also need market data:
 
 The app does not need and does not store your IBKR password.
 
+### What Your TWS Screenshots Showed
+
+Your API settings looked mostly correct:
+
+```text
+Enable ActiveX and Socket Clients: checked
+Read-Only API: checked
+Socket port: 7496
+Allow connections from localhost only: checked
+```
+
+That means the app must use:
+
+```text
+IBKR_PORT=7496
+```
+
+in `.env.local`.
+
+The earlier connection-refused error happened because the app was trying `7497`, but TWS was listening on `7496`.
+
+`Allow connections from localhost only` is good for this app because the collector runs on the same laptop as TWS.
+
+`Trusted IPs` can stay empty when `Allow connections from localhost only` is checked. Adding `127.0.0.1` is optional.
+
+### Do We Need "Use Local PC To Calculate Bid/Ask IV"?
+
+No, not for connecting to IBKR and not for collecting bid/ask quotes.
+
+That setting is for TWS volatility/model calculations. The collector needs the actual option bid and ask first. Later, if IBKR supplies implied volatility/Greeks, the app stores them. But this checkbox does not fix API connection or OPRA market-data permission problems.
+
 ## Step 5: Run IBKR Preflight
 
 Run:
@@ -224,6 +255,20 @@ Expected success means:
 4. An option quote comes back.
 
 If bid/ask is missing, the most likely cause is market data entitlement, especially OPRA.
+
+If the output says:
+
+```text
+ibkr connection ok
+market_data_incomplete=stock bid/ask, option bid/ask
+```
+
+then the API socket is working. The remaining issue is market data availability, usually one of:
+
+1. Market is closed.
+2. Delayed-only data is available.
+3. OPRA options data is not subscribed for API use.
+4. US stock top-of-book/NBBO data is not subscribed for API use.
 
 ## Step 6: Collect Real IBKR Data
 
