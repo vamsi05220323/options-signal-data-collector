@@ -256,6 +256,12 @@ Expected success means:
 
 If bid/ask is missing, the most likely cause is market data entitlement, especially OPRA.
 
+For the exact subscription choices, estimated monthly costs, and recommended daily run schedule, see:
+
+```text
+MARKET_DATA_AND_RUN_PLAN.md
+```
+
 If the output says:
 
 ```text
