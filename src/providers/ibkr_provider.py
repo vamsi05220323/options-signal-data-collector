@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.models import OptionContract, OptionQuote, StockQuote
+from src.models import OptionContract, OptionQuote, StockQuote, TradeSignal
 from src.providers.base import BaseDataProvider, ProviderError
 
 
@@ -23,6 +24,7 @@ class IBKRProvider(BaseDataProvider):
         self.client_id = client_id
         self.timezone = timezone
         self.ib = None
+        self._stock_contracts: dict[str, object] = {}
 
     def connect(self) -> None:
         if self.ib is not None and self.ib.isConnected():
@@ -41,13 +43,47 @@ class IBKRProvider(BaseDataProvider):
         if self.ib is not None and self.ib.isConnected():
             self.ib.disconnect()
 
+    def resolve_signal(self, signal: TradeSignal) -> TradeSignal:
+        self.connect()
+        contract, match_count = self._resolve_stock_contract(signal)
+        message = (
+            f"Resolved {signal.symbol} to conId={getattr(contract, 'conId', None)} "
+            f"primaryExchange={getattr(contract, 'primaryExchange', None) or 'UNKNOWN'} "
+            f"currency={getattr(contract, 'currency', None) or signal.currency}"
+        )
+        if match_count > 1:
+            message += f"; selected best match from {match_count} IBKR contract matches"
+        resolved = replace(
+            signal,
+            symbol=(getattr(contract, "symbol", None) or signal.symbol).upper(),
+            underlying_exchange=getattr(contract, "exchange", None) or signal.underlying_exchange,
+            primary_exchange=getattr(contract, "primaryExchange", None) or signal.primary_exchange,
+            currency=getattr(contract, "currency", None) or signal.currency,
+            ibkr_con_id=getattr(contract, "conId", None) or signal.ibkr_con_id,
+            ibkr_local_symbol=getattr(contract, "localSymbol", None) or signal.ibkr_local_symbol,
+            ibkr_trading_class=getattr(contract, "tradingClass", None) or signal.ibkr_trading_class,
+            contract_resolution_status="RESOLVED",
+            contract_resolution_message=message,
+        )
+        self._cache_stock_contract(resolved, contract)
+        return resolved
+
     def get_stock_quote(self, symbol: str, fallback_price: float | None = None) -> StockQuote:
         self.connect()
-        from ib_insync import Stock
+        contract = self._stock_contracts.get(f"symbol:{symbol.upper()}") or self._make_stock_contract(symbol.upper())
+        return self._request_stock_quote(contract, symbol.upper(), fallback_price)
 
-        contract = Stock(symbol.upper(), "SMART", "USD")
-        self.ib.qualifyContracts(contract)
-        ticker = self.ib.reqMktData(contract, "", False, False)
+    def get_stock_quote_for_signal(self, signal: TradeSignal, fallback_price: float | None = None) -> StockQuote:
+        self.connect()
+        contract = self._stock_contract_for_signal(signal)
+        return self._request_stock_quote(contract, signal.symbol, fallback_price)
+
+    def _request_stock_quote(self, contract, symbol: str, fallback_price: float | None = None) -> StockQuote:
+        qualified = self.ib.qualifyContracts(contract)
+        if not qualified:
+            raise ProviderError(f"IBKR could not qualify stock contract for {symbol}")
+        qualified_contract = qualified[0]
+        ticker = self.ib.reqMktData(qualified_contract, "", False, False)
         self.ib.sleep(1.0)
         bid = _clean_number(ticker.bid)
         ask = _clean_number(ticker.ask)
@@ -57,7 +93,7 @@ class IBKRProvider(BaseDataProvider):
         now = self._now()
         return StockQuote(
             timestamp_local=now,
-            symbol=symbol,
+            symbol=(getattr(qualified_contract, "symbol", None) or symbol).upper(),
             bid=bid,
             ask=ask,
             last=last,
@@ -74,13 +110,25 @@ class IBKRProvider(BaseDataProvider):
         stock_price: float | None = None,
     ) -> list[float]:
         self.connect()
-        from ib_insync import Stock
+        stock = self._stock_contracts.get(f"symbol:{symbol.upper()}") or self._make_stock_contract(symbol.upper())
+        return self._request_option_chain(stock, symbol.upper(), expiry)
 
-        stock = Stock(symbol.upper(), "SMART", "USD")
+    def get_option_chain_for_signal(
+        self,
+        signal: TradeSignal,
+        option_type: str,
+        stock_price: float | None = None,
+    ) -> list[float]:
+        self.connect()
+        stock = self._stock_contract_for_signal(signal)
+        return self._request_option_chain(stock, signal.symbol, signal.expiry.isoformat())
+
+    def _request_option_chain(self, stock, symbol: str, expiry: str) -> list[float]:
         qualified = self.ib.qualifyContracts(stock)
         if not qualified:
             raise ProviderError(f"IBKR could not qualify stock contract for {symbol}")
-        params = self.ib.reqSecDefOptParams(symbol.upper(), "", "STK", qualified[0].conId)
+        underlying = qualified[0]
+        params = self.ib.reqSecDefOptParams(underlying.symbol, "", "STK", underlying.conId)
         expiry_key = expiry.replace("-", "")
         strikes: set[float] = set()
         for chain in params:
@@ -92,21 +140,33 @@ class IBKRProvider(BaseDataProvider):
 
     def get_option_quote(self, contract: OptionContract, stock_last: float | None = None) -> OptionQuote:
         self.connect()
-        from ib_insync import Option
+        from ib_insync import Contract, Option
 
         right = "C" if contract.option_type.value == "CALL" else "P"
-        ib_contract = Option(
-            contract.underlying_symbol,
-            contract.expiry.strftime("%Y%m%d"),
-            contract.strike,
-            right,
-            contract.exchange or "SMART",
-            currency="USD",
-        )
+        if contract.con_id:
+            ib_contract = Contract(conId=contract.con_id, exchange=contract.exchange or "SMART", currency=contract.currency)
+        else:
+            ib_contract = Option(
+                contract.underlying_symbol,
+                contract.expiry.strftime("%Y%m%d"),
+                contract.strike,
+                right,
+                contract.exchange or "SMART",
+                currency=contract.currency,
+            )
+            if contract.trading_class:
+                ib_contract.tradingClass = contract.trading_class
         qualified = self.ib.qualifyContracts(ib_contract)
         if not qualified:
             raise ProviderError(f"IBKR could not qualify option {contract.display}")
-        ticker = self.ib.reqMktData(qualified[0], "100,101,106", False, False)
+        qualified_contract = qualified[0]
+        contract.con_id = getattr(qualified_contract, "conId", None) or contract.con_id
+        contract.local_symbol = getattr(qualified_contract, "localSymbol", None) or contract.local_symbol
+        contract.trading_class = getattr(qualified_contract, "tradingClass", None) or contract.trading_class
+        contract.exchange = getattr(qualified_contract, "exchange", None) or contract.exchange
+        contract.primary_exchange = getattr(qualified_contract, "primaryExchange", None) or contract.primary_exchange
+        contract.currency = getattr(qualified_contract, "currency", None) or contract.currency
+        ticker = self.ib.reqMktData(qualified_contract, "100,101,106", False, False)
         self.ib.sleep(1.0)
         bid = _clean_number(ticker.bid)
         ask = _clean_number(ticker.ask)
@@ -137,6 +197,88 @@ class IBKRProvider(BaseDataProvider):
 
     def _now(self) -> datetime:
         return datetime.now(ZoneInfo(self.timezone))
+
+    def _make_stock_contract(self, symbol: str, exchange: str = "SMART", currency: str = "USD"):
+        from ib_insync import Stock
+
+        return Stock(symbol.upper(), exchange, currency)
+
+    def _resolve_stock_contract(self, signal: TradeSignal):
+        from ib_insync import Contract
+
+        if signal.ibkr_con_id:
+            contract = Contract(
+                conId=signal.ibkr_con_id,
+                exchange=signal.underlying_exchange or "SMART",
+                currency=signal.currency or "USD",
+            )
+            qualified = self.ib.qualifyContracts(contract)
+            if not qualified:
+                raise ProviderError(f"IBKR could not qualify conId={signal.ibkr_con_id} for {signal.symbol}")
+            return qualified[0], 1
+
+        stock = self._make_stock_contract(signal.symbol, signal.underlying_exchange, signal.currency)
+        if signal.primary_exchange:
+            stock.primaryExchange = signal.primary_exchange
+        details = self.ib.reqContractDetails(stock)
+        if details:
+            selected = _select_stock_detail(details, signal)
+            return selected.contract, len(details)
+        qualified = self.ib.qualifyContracts(stock)
+        if not qualified:
+            raise ProviderError(f"IBKR could not resolve stock contract for {signal.symbol}")
+        return qualified[0], 1
+
+    def _stock_contract_for_signal(self, signal: TradeSignal):
+        cached = self._stock_contracts.get(_stock_cache_key(signal))
+        if cached is not None:
+            return cached
+        contract, _match_count = self._resolve_stock_contract(signal)
+        self._cache_stock_contract(signal, contract)
+        return contract
+
+    def _cache_stock_contract(self, signal: TradeSignal, contract) -> None:
+        self._stock_contracts[_stock_cache_key(signal)] = contract
+        self._stock_contracts[f"symbol:{signal.symbol.upper()}"] = contract
+
+
+def _select_stock_detail(details, signal: TradeSignal):
+    preferred_primary = [
+        signal.primary_exchange,
+        "NASDAQ",
+        "NYSE",
+        "ARCA",
+        "AMEX",
+        "BATS",
+        "IEX",
+    ]
+    preferred_primary = [item for item in preferred_primary if item]
+
+    def score(detail) -> tuple[int, int, int, int]:
+        contract = detail.contract
+        symbol_score = 1 if getattr(contract, "symbol", "").upper() == signal.symbol else 0
+        sec_type_score = 1 if getattr(contract, "secType", "") == "STK" else 0
+        currency_score = 1 if getattr(contract, "currency", "").upper() == signal.currency else 0
+        primary = (getattr(contract, "primaryExchange", "") or "").upper()
+        try:
+            primary_score = len(preferred_primary) - preferred_primary.index(primary)
+        except ValueError:
+            primary_score = 0
+        return symbol_score, sec_type_score, currency_score, primary_score
+
+    return max(details, key=score)
+
+
+def _stock_cache_key(signal: TradeSignal) -> str:
+    if signal.ibkr_con_id:
+        return f"conid:{signal.ibkr_con_id}"
+    parts = [
+        signal.symbol,
+        signal.underlying_exchange or "SMART",
+        signal.primary_exchange or "",
+        signal.currency or "USD",
+    ]
+    return "signal:" + "|".join(part.upper() for part in parts)
 
 
 def _clean_number(value) -> float | None:

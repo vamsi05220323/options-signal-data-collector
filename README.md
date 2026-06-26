@@ -57,6 +57,14 @@ CSV columns:
 timestamp_local,symbol,direction,signal_strike,expiry,signal_premium,stock_price_at_signal
 ```
 
+Optional IBKR identity columns for ambiguous symbols:
+
+```text
+underlying_exchange,primary_exchange,currency,ibkr_con_id,ibkr_local_symbol,ibkr_trading_class
+```
+
+For normal U.S. NASDAQ/NYSE stock signals, these optional columns can be left blank. In IBKR mode the app resolves the stock contract through TWS, stores the selected conId/primary exchange in `signals.csv`, and stores option local symbol/trading class details in `option_ticks.csv`.
+
 The collector tracks the original signal contract, exact opposite strike, one ITM opposite contract, ATM/nearest opposite contract, several OTM opposite contracts, and optional lotto observation contracts.
 
 ## Outputs
@@ -98,6 +106,16 @@ python -m src.main replay --run-folder data/runs/YYYY-MM-DD
 ## News Context
 
 News is a context/ranking filter, not a trade trigger. The collector supports mock news by default and has official Alpha Vantage and Finnhub provider modules. Yahoo/yfinance news is deliberately not enabled by default because it is an unofficial fallback.
+
+The ranking formula is:
+
+```text
+70% stock/option microstructure
+20% news context
+10% signal-side contract behavior
+```
+
+News details are written to `news_articles.csv`, `news_summary_by_signal.csv`, and the main `summary_by_signal.csv`.
 
 Set one of these in `.env.local` if available:
 

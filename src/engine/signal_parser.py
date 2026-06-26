@@ -112,6 +112,12 @@ def read_signals_csv(path: Path, *, timezone: str, provider: str) -> list[TradeS
                     signal_premium=_optional_float(row["signal_premium"]),
                     stock_price_at_signal=float(row["stock_price_at_signal"]),
                     provider=provider,
+                    underlying_exchange=_optional_text(row.get("underlying_exchange")) or "SMART",
+                    primary_exchange=_optional_text(row.get("primary_exchange")),
+                    currency=_optional_text(row.get("currency")) or "USD",
+                    ibkr_con_id=_optional_int(row.get("ibkr_con_id")),
+                    ibkr_local_symbol=_optional_text(row.get("ibkr_local_symbol")),
+                    ibkr_trading_class=_optional_text(row.get("ibkr_trading_class")),
                 )
             )
     return signals
@@ -134,3 +140,16 @@ def _optional_float(value: str | None) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     return float(value)
+
+
+def _optional_int(value: str | None) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return int(float(value))
+
+
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None

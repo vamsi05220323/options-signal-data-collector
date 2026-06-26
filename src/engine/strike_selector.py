@@ -85,6 +85,9 @@ def _append_contract(
             option_type=option_type,
             role=role,
             rank=ROLE_RANK[role],
+            exchange="SMART",
+            currency=signal.currency,
+            primary_exchange=signal.primary_exchange,
         )
     )
 

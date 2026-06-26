@@ -95,17 +95,18 @@ For each signal:
 2. `src/engine/signal_parser.py` parses CSV rows or signal text into `TradeSignal`.
 3. `src/main.py` creates the selected provider.
 4. `src/engine/capture_manager.py` starts collection.
-5. The provider fetches the option chain for the signal expiry.
-6. `src/engine/strike_selector.py` selects contracts to track:
+5. The provider resolves broker contract identity when supported. In IBKR mode this stores the resolved stock conId, primary exchange, currency, local symbol, and trading class in the signal row.
+6. The provider fetches the option chain for the signal expiry.
+7. `src/engine/strike_selector.py` selects contracts to track:
    - Original signal-side contract.
    - Exact opposite strike.
    - One ITM opposite contract.
    - ATM or nearest opposite contract.
    - Multiple OTM opposite contracts.
    - Optional lotto observation contracts.
-7. The capture loop writes stock ticks and option ticks.
-8. News context is fetched once at signal entry.
-9. The summarizer builds contract summaries, signal summaries, and bars.
+8. The capture loop writes stock ticks and option ticks. IBKR option ticks include option conId, local symbol, trading class, and exchange when available.
+9. News context is fetched once at signal entry.
+10. The summarizer builds contract summaries, signal summaries, and bars.
 
 ## File-by-File Reference
 
@@ -218,7 +219,7 @@ NewsArticle
 NewsSummary
 ```
 
-It also has serialization helpers used by CSV and SQLite storage.
+It also has serialization helpers used by CSV and SQLite storage. `TradeSignal` carries optional IBKR identity fields such as `underlying_exchange`, `primary_exchange`, `currency`, `ibkr_con_id`, `ibkr_local_symbol`, and `ibkr_trading_class`. `OptionContract` and `OptionTick` carry option conId/local-symbol/trading-class fields when IBKR resolves them.
 
 `src/preflight.py`
 
@@ -238,8 +239,11 @@ Defines the provider interface:
 connect
 close
 get_stock_quote
+get_stock_quote_for_signal
 get_option_chain
+get_option_chain_for_signal
 get_option_quote
+resolve_signal
 ```
 
 All downstream capture code depends on this interface, not on a broker-specific implementation.
@@ -251,6 +255,8 @@ Synthetic quote provider for local testing. It simulates stock pump/failure and 
 `src/providers/ibkr_provider.py`
 
 IBKR provider using `ib_insync`. It lazy-imports IBKR dependencies so mock mode and tests work without TWS. It never stores broker credentials.
+
+Before capture, it resolves the underlying stock contract through TWS. The resolver prefers exact U.S. stock symbols, USD currency, SMART routing, and common U.S. primary exchanges such as NASDAQ/NYSE/ARCA/AMEX. If an `ibkr_con_id` is supplied, it qualifies that conId directly. This makes ambiguous symbols like `PEP` more deterministic without changing the ranking formula.
 
 `src/providers/webull_provider.py`
 
@@ -354,7 +360,7 @@ option_1min_bars.csv
 option_5min_bars.csv
 ```
 
-It calculates best theoretical mid return and best conservative ask-to-bid return.
+It calculates best theoretical mid return and best conservative ask-to-bid return. `summary_by_signal.csv` also carries the news fields used in ranking, including `news_score`, `news_bias`, `catalyst_type`, counts, and top headlines.
 
 `src/engine/scoring.py`
 

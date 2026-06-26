@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from src.config import AppConfig
-from src.engine.summarizer import best_ask_to_future_bid, build_contract_summary
+from src.engine.summarizer import best_ask_to_future_bid, build_contract_summary, build_signal_summary
 
 
 def test_conservative_return_uses_future_bid_after_earlier_ask():
@@ -64,3 +64,30 @@ def test_contract_summary_marks_tradable_move():
     )
     rows = build_contract_summary(df, AppConfig())
     assert rows[0]["was_best_move_tradable"] is True
+
+
+def test_signal_summary_exposes_news_ranking_inputs():
+    signals = pd.DataFrame([{"signal_id": "S1", "symbol": "BEAM"}])
+    news = pd.DataFrame(
+        [
+            {
+                "signal_id": "S1",
+                "news_provider": "mock",
+                "news_count_24h": 2,
+                "news_count_7d": 3,
+                "latest_news_age_minutes": 15,
+                "catalyst_detected": True,
+                "catalyst_type": "FDA",
+                "news_bias": "BULLISH",
+                "news_score": 82,
+                "top_headlines_24h": "BEAM catalyst update",
+                "news_skip_warning": "",
+            }
+        ]
+    )
+
+    rows = build_signal_summary(signals, pd.DataFrame(), pd.DataFrame(), news)
+
+    assert rows[0]["news_score"] == 82
+    assert rows[0]["news_bias"] == "BULLISH"
+    assert rows[0]["top_headlines_24h"] == "BEAM catalyst update"

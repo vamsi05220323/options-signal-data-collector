@@ -20,15 +20,7 @@ from src.engine.metrics import (
 from src.engine.quote_validation import validate_quote
 from src.engine.strike_selector import select_contracts_for_signal
 from src.engine.summarizer import summarize_run
-from src.models import (
-    ContractRole,
-    NewsArticle,
-    OptionContract,
-    OptionTick,
-    StockQuote,
-    StockTick,
-    TradeSignal,
-)
+from src.models import ContractRole, OptionContract, OptionTick, StockQuote, StockTick, TradeSignal
 from src.news_providers import (
     AlphaVantageNewsProvider,
     BaseNewsProvider,
@@ -80,6 +72,7 @@ def collect_signals(
     runtimes: list[SignalRuntime] = []
     try:
         for signal in signals:
+            signal = provider.resolve_signal(signal)
             storage.append_signal(signal)
             contracts = _resolve_contracts(signal, provider, config, console)
             runtimes.append(
@@ -100,8 +93,8 @@ def collect_signals(
             if duration_seconds is not None and time.monotonic() - start >= duration_seconds:
                 break
             for runtime in runtimes:
-                stock = provider.get_stock_quote(
-                    runtime.signal.symbol,
+                stock = provider.get_stock_quote_for_signal(
+                    runtime.signal,
                     fallback_price=runtime.signal.stock_price_at_signal,
                 )
                 stock_tick = _build_stock_tick(runtime, stock)
@@ -138,9 +131,8 @@ def _resolve_contracts(
     console: LiveConsole,
 ) -> list[OptionContract]:
     try:
-        strikes = provider.get_option_chain(
-            signal.symbol,
-            signal.expiry.isoformat(),
+        strikes = provider.get_option_chain_for_signal(
+            signal,
             signal.opposite_direction.value,
             stock_price=signal.stock_price_at_signal,
         )
@@ -214,6 +206,10 @@ def _build_option_tick(runtime: SignalRuntime, contract_runtime: ContractRuntime
         signal_id=runtime.signal.signal_id,
         underlying_symbol=runtime.signal.symbol,
         option_symbol=quote.option_symbol or contract.storage_symbol,
+        option_con_id=contract.con_id,
+        option_local_symbol=contract.local_symbol,
+        option_trading_class=contract.trading_class,
+        option_exchange=contract.exchange,
         contract_role=contract.role,
         expiry=contract.expiry,
         strike=contract.strike,

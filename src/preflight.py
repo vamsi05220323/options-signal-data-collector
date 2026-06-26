@@ -49,8 +49,10 @@ def _run_ibkr_preflight(config: AppConfig) -> int:
     signal = _test_signal(config, "ibkr")
     try:
         provider.connect()
-        stock = provider.get_stock_quote(signal.symbol, signal.stock_price_at_signal)
-        strikes = provider.get_option_chain(signal.symbol, signal.expiry.isoformat(), signal.opposite_direction.value, stock.last)
+        signal = provider.resolve_signal(signal)
+        print(f"resolved_underlying conId={signal.ibkr_con_id} primary_exchange={signal.primary_exchange} currency={signal.currency}")
+        stock = provider.get_stock_quote_for_signal(signal, signal.stock_price_at_signal)
+        strikes = provider.get_option_chain_for_signal(signal, signal.opposite_direction.value, stock.last)
         contracts = select_contracts_for_signal(signal, stock.last or signal.stock_price_at_signal, strikes, config)
         quote = provider.get_option_quote(contracts[0], stock.last)
     except ProviderError as exc:

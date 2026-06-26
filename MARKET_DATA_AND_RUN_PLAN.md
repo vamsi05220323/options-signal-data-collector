@@ -84,6 +84,7 @@ Notes:
 - OPRA fee may be waived when monthly commissions reach IBKR's listed waiver threshold.
 - This is the leanest setup for a broad US-stock/US-options signal collector.
 - If all signals are guaranteed NASDAQ-only, the bare minimum test setup could be OPRA + NASDAQ Network C = USD 3.00/month, but this is too narrow for real daily use.
+- Yes: the OPRA line means `OPRA (US Options Exchanges) (NP,L1)` in Client Portal.
 
 ### Simpler Bundle Choice
 
@@ -104,6 +105,7 @@ Notes:
 
 - The USD 10.00 base bundle may be waived if monthly commissions reach IBKR's listed waiver threshold.
 - This bundle includes the data we need, but may cost more than a la carte.
+- If the a la carte Level I selections are available and selected, skipping `US Securities Snapshot and Futures Value Bundle (NP,L1)` is correct for this project. That bundle is only the alternate route.
 
 ## What Not To Select Yet
 
@@ -126,7 +128,7 @@ The collector is designed to record continuous bid/ask snapshots every second du
 
 Snapshot market data is charged per request and is not available for options in the same way as streaming Level I option quotes. It is not the right base mode for this project.
 
-Use streaming Level I subscriptions for this collector.
+Use streaming Level I subscriptions for this collector. Skipping the snapshot bundle is correct when the a la carte Level I path is selected.
 
 ## Cost Rules To Remember
 

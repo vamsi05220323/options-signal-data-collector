@@ -173,6 +173,9 @@ percentage_of_valid_quotes
 median_spread_pct
 was_best_move_tradable
 opportunity_score
+news_score
+news_bias
+catalyst_type
 ```
 
 The most important one is:
@@ -306,6 +309,14 @@ Use columns:
 timestamp_local,symbol,direction,signal_strike,expiry,signal_premium,stock_price_at_signal
 ```
 
+Optional columns for IBKR contract identity:
+
+```text
+underlying_exchange,primary_exchange,currency,ibkr_con_id,ibkr_local_symbol,ibkr_trading_class
+```
+
+For the normal workflow where you enter one NASDAQ/NYSE ticker at a time, you do not need to fill those optional columns. Leave them blank and the IBKR provider will resolve the stock contract through TWS, store the selected conId/primary exchange, and use SMART routing for the option contracts.
+
 Example:
 
 ```csv
@@ -333,7 +344,8 @@ For each CALL signal:
 8. Saves option bid/ask/mid/last/spread/volume/OI/IV/Greeks if available.
 9. Marks invalid quotes instead of hiding them.
 10. Calculates conservative ask-to-bid returns.
-11. Scores every signal independently.
+11. Adds news context to the ranking inputs.
+12. Scores every signal independently using 70% bid/ask microstructure, 20% news context, and 10% signal-side contract behavior.
 
 It does not send buy/sell alerts yet.
 

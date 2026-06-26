@@ -58,14 +58,32 @@ class TradeSignal:
     provider: str = "mock"
     status: SignalStatus = SignalStatus.COLLECTING
     raw_text: str | None = None
+    underlying_exchange: str = "SMART"
+    primary_exchange: str | None = None
+    currency: str = "USD"
+    ibkr_con_id: int | None = None
+    ibkr_local_symbol: str | None = None
+    ibkr_trading_class: str | None = None
+    contract_resolution_status: str = "UNRESOLVED"
+    contract_resolution_message: str | None = None
 
     def __post_init__(self) -> None:
         self.symbol = normalize_symbol(self.symbol)
         self.direction = OptionType.from_text(self.direction)
+        self.underlying_exchange = self.underlying_exchange.strip().upper() if self.underlying_exchange else "SMART"
+        self.primary_exchange = _clean_optional_text(self.primary_exchange)
+        self.currency = self.currency.strip().upper() if self.currency else "USD"
+        self.ibkr_local_symbol = _clean_optional_text(self.ibkr_local_symbol)
+        self.ibkr_trading_class = _clean_optional_text(self.ibkr_trading_class)
+        self.contract_resolution_status = self.contract_resolution_status.strip().upper()
         self.signal_strike = float(self.signal_strike)
         self.stock_price_at_signal = float(self.stock_price_at_signal)
         if self.signal_premium is not None:
             self.signal_premium = float(self.signal_premium)
+        if self.ibkr_con_id in ("", 0):
+            self.ibkr_con_id = None
+        elif self.ibkr_con_id is not None:
+            self.ibkr_con_id = int(self.ibkr_con_id)
         if isinstance(self.status, str):
             self.status = SignalStatus(self.status)
 
@@ -105,6 +123,11 @@ class OptionContract:
     option_symbol: str | None = None
     rank: int = 100
     exchange: str | None = None
+    currency: str = "USD"
+    con_id: int | None = None
+    local_symbol: str | None = None
+    trading_class: str | None = None
+    primary_exchange: str | None = None
 
     def __post_init__(self) -> None:
         self.underlying_symbol = normalize_symbol(self.underlying_symbol)
@@ -112,6 +135,15 @@ class OptionContract:
         if isinstance(self.role, str):
             self.role = ContractRole(self.role)
         self.strike = float(self.strike)
+        self.exchange = _clean_optional_text(self.exchange)
+        self.currency = self.currency.strip().upper() if self.currency else "USD"
+        self.local_symbol = _clean_optional_text(self.local_symbol)
+        self.trading_class = _clean_optional_text(self.trading_class)
+        self.primary_exchange = _clean_optional_text(self.primary_exchange)
+        if self.con_id in ("", 0):
+            self.con_id = None
+        elif self.con_id is not None:
+            self.con_id = int(self.con_id)
         if self.option_symbol:
             self.option_symbol = self.option_symbol.strip().upper()
 
@@ -125,6 +157,8 @@ class OptionContract:
 
     @property
     def storage_symbol(self) -> str:
+        if self.local_symbol:
+            return self.local_symbol.strip().upper()
         if self.option_symbol:
             return self.option_symbol
         yymmdd = self.expiry.strftime("%y%m%d")
@@ -194,6 +228,10 @@ class OptionTick:
     signal_id: str
     underlying_symbol: str
     option_symbol: str
+    option_con_id: int | None
+    option_local_symbol: str | None
+    option_trading_class: str | None
+    option_exchange: str | None
     contract_role: ContractRole
     expiry: date
     strike: float
@@ -276,6 +314,13 @@ class NewsSummary:
 
 def normalize_symbol(value: str) -> str:
     return value.strip().upper().lstrip("$")
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned.upper() if cleaned else None
 
 
 def format_strike(value: float) -> str:

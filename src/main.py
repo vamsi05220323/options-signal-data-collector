@@ -30,6 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     collect_signal.add_argument("--signal-premium", type=float)
     collect_signal.add_argument("--stock-price", type=float, required=True)
     collect_signal.add_argument("--provider", choices=["ibkr", "webull", "mock"])
+    collect_signal.add_argument("--underlying-exchange", default="SMART")
+    collect_signal.add_argument("--primary-exchange")
+    collect_signal.add_argument("--currency", default="USD")
+    collect_signal.add_argument("--ibkr-con-id", type=int)
     collect_signal.add_argument("--duration-seconds", type=int)
     collect_signal.add_argument("--run-folder", type=Path)
     collect_signal.add_argument("--quiet", action="store_true")
@@ -80,6 +84,10 @@ def run_collect_signal(args: argparse.Namespace, config: AppConfig) -> int:
         signal_premium=args.signal_premium,
         stock_price_at_signal=args.stock_price,
         provider=provider_name,
+        underlying_exchange=args.underlying_exchange,
+        primary_exchange=args.primary_exchange,
+        currency=args.currency,
+        ibkr_con_id=args.ibkr_con_id,
     )
     provider = provider_from_config(config, provider_name)
     run_folder = collect_signals(

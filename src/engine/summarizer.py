@@ -134,6 +134,7 @@ def build_signal_summary(
             "opportunity_score": score,
             "skip_reason": skip_reason,
         }
+        row.update(_news_summary_columns(news_row))
         rows.append(_ordered(row, SIGNAL_SUMMARY_FIELDS))
     return rows
 
@@ -254,6 +255,24 @@ def _count_untradable_contracts(contracts: pd.DataFrame) -> int:
         return 0
     tradable = contracts["was_best_move_tradable"].astype(str).str.lower().isin({"true", "1", "yes"})
     return int((~tradable).sum())
+
+
+def _news_summary_columns(news_row: pd.Series | None) -> dict:
+    fields = [
+        "news_provider",
+        "news_count_24h",
+        "news_count_7d",
+        "latest_news_age_minutes",
+        "catalyst_detected",
+        "catalyst_type",
+        "news_bias",
+        "news_score",
+        "top_headlines_24h",
+        "news_skip_warning",
+    ]
+    if news_row is None:
+        return {field: None for field in fields}
+    return {field: news_row.get(field) for field in fields}
 
 
 def _ordered(row: dict, fields: list[str]) -> dict:

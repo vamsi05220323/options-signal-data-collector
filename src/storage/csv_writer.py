@@ -17,6 +17,14 @@ SIGNAL_FIELDS = [
     "opposite_direction",
     "provider",
     "status",
+    "underlying_exchange",
+    "primary_exchange",
+    "currency",
+    "ibkr_con_id",
+    "ibkr_local_symbol",
+    "ibkr_trading_class",
+    "contract_resolution_status",
+    "contract_resolution_message",
 ]
 
 STOCK_TICK_FIELDS = [
@@ -42,6 +50,10 @@ OPTION_TICK_FIELDS = [
     "signal_id",
     "underlying_symbol",
     "option_symbol",
+    "option_con_id",
+    "option_local_symbol",
+    "option_trading_class",
+    "option_exchange",
     "contract_role",
     "expiry",
     "strike",
@@ -140,6 +152,16 @@ SIGNAL_SUMMARY_FIELDS = [
     "signal_direction_stock_result",
     "opposite_side_opportunity_found",
     "opportunity_score",
+    "news_provider",
+    "news_count_24h",
+    "news_count_7d",
+    "latest_news_age_minutes",
+    "catalyst_detected",
+    "catalyst_type",
+    "news_bias",
+    "news_score",
+    "top_headlines_24h",
+    "news_skip_warning",
     "skip_reason",
 ]
 
