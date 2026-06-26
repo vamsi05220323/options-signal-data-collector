@@ -119,6 +119,14 @@ User-facing setup and run instructions. Keep this concise and operational.
 
 Detailed project map for future development. This file should be updated whenever the architecture changes.
 
+`MARKET_DATA_AND_RUN_PLAN.md`
+
+IBKR market-data subscription choices, cost estimates, and daily run schedule.
+
+`KNOWN_GAPS_AND_DECISIONS.md`
+
+Known technical gaps, decisions made during setup, and approval rules for future engine changes.
+
 `requirements.txt`
 
 Python dependencies for local development and runtime:

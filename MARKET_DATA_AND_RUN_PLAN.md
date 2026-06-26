@@ -60,6 +60,179 @@ Do not guess on this. The status is a legal/exchange classification, not a softw
 
 ## Recommended Subscription Path
 
+## Portal Checkbox Decisions
+
+This section maps the visible Client Portal choices to what we should select for this project.
+
+### Image 1: Quote Bundles
+
+Recommended lean path:
+
+```text
+Do not select anything in Quote Bundles.
+```
+
+Use this lean path when selecting individual Level I items in the `Level I (NBBO)` section:
+
+```text
+NASDAQ (Network C/UTP) (NP,L1)
+NYSE (Network A/CTA) (NP,L1)
+NYSE American, BATS, ARCA, IEX, and Regional Exchanges (Network B) (NP,L1)
+OPRA (US Options Exchanges) (NP,L1)
+```
+
+Alternative bundle path:
+
+```text
+Select US Securities Snapshot and Futures Value Bundle (NP,L1)
+Select US Equity and Options Add-On Streaming Bundle (NP)
+```
+
+Use the bundle path only if the portal makes the a la carte Level I path hard to complete.
+
+Do not select:
+
+```text
+US Futures Value Bundle PLUS (NP,L2)
+Cboe One Add-On Bundle (NP,L1)
+```
+
+Those are not needed for the current stock/options collector.
+
+### Image 2: Indexes
+
+Recommended:
+
+```text
+Select nothing.
+```
+
+Reason:
+
+The current collector tracks equity options and underlying stocks from signal-provider alerts. It does not need index quotes yet.
+
+Add index subscriptions later only if we intentionally collect SPX, VIX, SPY index context, or index-option data that requires a separate index feed.
+
+### Images 3, 4, 5: Level I (NBBO)
+
+Select:
+
+```text
+NASDAQ (Network C/UTP) (NP,L1) - USD 1.50/month
+NYSE (Network A/CTA) (NP,L1) - USD 1.50/month
+NYSE American, BATS, ARCA, IEX, and Regional Exchanges (Network B) (NP,L1) - USD 1.50/month
+OPRA (US Options Exchanges) (NP,L1) - USD 1.50/month
+```
+
+Do not select:
+
+```text
+Canadian Exchange Group
+Canadian Securities Exchange
+Cboe One
+CBOT Real-Time
+CFE Enhanced
+CME Real-Time
+COMEX Real-Time
+Mexican Futures Derivatives
+Mexican Options Derivatives
+Mexican Stock Exchange
+Montreal Derivatives
+NEO Exchange
+NYMEX Real-Time
+OTC Markets
+```
+
+Reason:
+
+Those are not required for US equity options around stock signal alerts.
+
+### Level II (Deep Book)
+
+Recommended:
+
+```text
+Select nothing.
+```
+
+Reason:
+
+IBKR states Level II is needed for market depth. Our app currently needs Level I/top-of-book bid and ask, not depth-of-book. Level II would add cost and complexity without answering the current research question.
+
+Do not select any of these yet:
+
+```text
+Cboe BZX Depth
+CBOT Real-Time L2
+CFE Enhanced with Depth of Book
+CME Real-Time L2
+COMEX Real-Time L2
+Global OTC and OTC Markets L2
+ICE Futures U.S. L2
+ISE Options L2
+NASDAQ Options Market L2
+NASDAQ TotalView-OpenView
+NYSE AMEX Options L2
+NYSE Arca Options L2
+NYSE ArcaBook
+NYSE OpenBook
+OTC Global Equities L2
+OTC Markets L2
+Toronto Market by Price
+TSX Venture Market by Price
+```
+
+Possible future use:
+
+Level II might become useful if we later build a liquidity/slippage model using order-book depth. That is not part of this collector phase.
+
+### Fixed Income
+
+Recommended:
+
+```text
+Select nothing.
+```
+
+Do not select:
+
+```text
+Bond Ratings - USD 3.00/month
+```
+
+Reason:
+
+The project is not collecting corporate/municipal bond data.
+
+### Other Subscriptions
+
+Recommended:
+
+```text
+Do not select paid order imbalance subscriptions.
+```
+
+Do not select:
+
+```text
+NYSE ARCA Order Imbalances - USD 1.00/month
+NYSE MKT Order Imbalances - USD 1.00/month
+NYSE Order Imbalances - USD 1.00/month
+```
+
+Already complimentary / okay to leave as-is:
+
+```text
+US Real-Time Non Consolidated Streaming Quotes - Fee Waived
+ZEROHASH Cryptocurrency - Fee Waived
+```
+
+Reason:
+
+Order imbalance feeds are auction/open-close data and are not required for option bid/ask tradability research.
+
+## Recommended Subscription Path
+
 ### Recommended First Choice: A La Carte Level I
 
 Use this if Client Portal allows selecting individual Level I subscriptions.
