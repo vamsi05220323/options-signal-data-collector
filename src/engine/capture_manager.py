@@ -42,6 +42,7 @@ class ContractRuntime:
     max_mid: float | None = None
     min_ask: float | None = None
     max_bid: float | None = None
+    active: bool = True
 
 
 @dataclass(slots=True)
@@ -58,6 +59,8 @@ def collect_signals(
     provider: BaseDataProvider,
     config: AppConfig,
     duration_seconds: int | None,
+    capture_start_time: datetime | None = None,
+    capture_end_time: datetime | None = None,
     run_folder: Path | None = None,
     quiet: bool = False,
     summarize: bool = True,
@@ -68,6 +71,7 @@ def collect_signals(
     active_run_folder = run_folder or config.data_dir / "runs" / datetime.now(tz).strftime("%Y-%m-%d")
     storage = RunStorage(active_run_folder)
     console = LiveConsole(quiet=quiet)
+    _wait_until_capture_start(capture_start_time, capture_end_time, tz, console)
     provider.connect()
     runtimes: list[SignalRuntime] = []
     try:
@@ -90,6 +94,8 @@ def collect_signals(
         start = time.monotonic()
         loops = 0
         while True:
+            if _capture_end_reached(capture_end_time, tz):
+                break
             if duration_seconds is not None and time.monotonic() - start >= duration_seconds:
                 break
             for runtime in runtimes:
@@ -101,10 +107,13 @@ def collect_signals(
                 storage.append_stock_tick(stock_tick)
                 latest_stock_ticks[runtime.signal.signal_id] = stock_tick
                 for contract_runtime in runtime.contracts:
+                    if not contract_runtime.active:
+                        continue
                     try:
                         quote = provider.get_option_quote(contract_runtime.contract, stock.last)
                     except ProviderError as exc:
                         console.status(f"Quote skipped for {contract_runtime.contract.display}: {exc}")
+                        contract_runtime.active = False
                         continue
                     option_tick = _build_option_tick(runtime, contract_runtime, stock, quote)
                     storage.append_option_tick(option_tick)
@@ -113,6 +122,8 @@ def collect_signals(
                 console.render([runtime.signal for runtime in runtimes], latest_stock_ticks, latest_option_ticks)
             loops += 1
             if duration_seconds is not None and time.monotonic() - start >= duration_seconds:
+                break
+            if _capture_end_reached(capture_end_time, tz):
                 break
             time.sleep(config.snapshot_interval_seconds)
     finally:
@@ -250,6 +261,31 @@ def _spread_limit(role: ContractRole) -> float:
     if role is ContractRole.LOTTO_OBSERVATION_ONLY:
         return 60.0
     return 35.0
+
+
+def _wait_until_capture_start(
+    capture_start_time: datetime | None,
+    capture_end_time: datetime | None,
+    tz: ZoneInfo,
+    console: LiveConsole,
+) -> None:
+    now = datetime.now(tz)
+    if capture_end_time and capture_end_time <= now:
+        raise ValueError("--end-time is already in the past for the configured timezone.")
+    if not capture_start_time or capture_start_time <= now:
+        return
+    console.status(f"Waiting until capture start time {capture_start_time.isoformat()}")
+    while True:
+        now = datetime.now(tz)
+        if now >= capture_start_time:
+            return
+        if capture_end_time and now >= capture_end_time:
+            raise ValueError("Capture end time arrived before capture started.")
+        time.sleep(min(5.0, max(0.1, (capture_start_time - now).total_seconds())))
+
+
+def _capture_end_reached(capture_end_time: datetime | None, tz: ZoneInfo) -> bool:
+    return bool(capture_end_time and datetime.now(tz) >= capture_end_time)
 
 
 def _collect_initial_news(signal: TradeSignal, config: AppConfig, storage: RunStorage, console: LiveConsole) -> None:

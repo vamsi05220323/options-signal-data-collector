@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -129,6 +129,34 @@ def parse_local_datetime(value: str, tz: ZoneInfo) -> datetime:
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=tz)
     return timestamp.astimezone(tz)
+
+
+def parse_runtime_datetime(value: str | None, tz: ZoneInfo, *, now: datetime | None = None) -> datetime | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    current = now or datetime.now(tz)
+    lowered = cleaned.lower()
+    if lowered in {"now", "current", "current-time", "current_time"}:
+        return current.astimezone(tz)
+    if lowered in {"market-open", "market_open", "open"}:
+        market_open, _market_close = _market_hours_for_timezone(tz)
+        return datetime.combine(current.date(), market_open, tzinfo=tz)
+    if lowered in {"market-close", "market_close", "close"}:
+        _market_open, market_close = _market_hours_for_timezone(tz)
+        return datetime.combine(current.date(), market_close, tzinfo=tz)
+    if re.fullmatch(r"\d{1,2}:\d{2}(?::\d{2})?", cleaned):
+        parsed_time = time.fromisoformat(cleaned if cleaned.count(":") == 2 else f"{cleaned}:00")
+        return datetime.combine(current.date(), parsed_time, tzinfo=tz)
+    return parse_local_datetime(cleaned, tz)
+
+
+def _market_hours_for_timezone(tz: ZoneInfo) -> tuple[time, time]:
+    if getattr(tz, "key", "") == "America/New_York":
+        return time(9, 30), time(16, 0)
+    return time(8, 30), time(15, 0)
 
 
 def make_signal_id(symbol: str, timestamp: datetime, direction: str, strike: float) -> str:

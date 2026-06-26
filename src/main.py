@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import AppConfig, load_config
 from src.engine.capture_manager import collect_signals
-from src.engine.signal_parser import parse_expiry, read_signals_csv
+from src.engine.signal_parser import parse_expiry, parse_runtime_datetime, read_signals_csv
 from src.engine.summarizer import summarize_run
 from src.models import OptionType, TradeSignal
 from src.preflight import run_preflight
@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     collect_signal.add_argument("--primary-exchange")
     collect_signal.add_argument("--currency", default="USD")
     collect_signal.add_argument("--ibkr-con-id", type=int)
+    collect_signal.add_argument("--signal-time", default="now", help="Signal timestamp: now/current, HH:MM, market-open, market-close, or ISO datetime.")
+    collect_signal.add_argument("--start-time", help="Capture start: now/current, HH:MM, market-open, market-close, or ISO datetime.")
+    collect_signal.add_argument("--end-time", help="Capture end: HH:MM, market-close, or ISO datetime. Use instead of --duration-seconds.")
     collect_signal.add_argument("--duration-seconds", type=int)
     collect_signal.add_argument("--run-folder", type=Path)
     collect_signal.add_argument("--quiet", action="store_true")
@@ -41,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     collect_file = subparsers.add_parser("collect-file", help="Collect all signals in a CSV.")
     collect_file.add_argument("--signals-file", type=Path, required=True)
     collect_file.add_argument("--provider", choices=["ibkr", "webull", "mock"])
+    collect_file.add_argument("--start-time", help="Capture start: now/current, HH:MM, market-open, market-close, or ISO datetime.")
+    collect_file.add_argument("--end-time", help="Capture end: HH:MM, market-close, or ISO datetime. Use instead of --duration-seconds.")
     collect_file.add_argument("--duration-seconds", type=int)
     collect_file.add_argument("--run-folder", type=Path)
     collect_file.add_argument("--quiet", action="store_true")
@@ -74,9 +79,12 @@ def provider_from_config(config: AppConfig, override: str | None = None, replay_
 
 def run_collect_signal(args: argparse.Namespace, config: AppConfig) -> int:
     provider_name = config.provider_name(args.provider)
+    tz = ZoneInfo(config.timezone)
+    signal_time = parse_runtime_datetime(args.signal_time, tz) or datetime.now(tz)
+    capture_start_time, capture_end_time = parse_capture_window(args, tz)
     signal = TradeSignal(
-        signal_id=make_cli_signal_id(args.symbol, config.timezone),
-        timestamp_local=datetime.now(ZoneInfo(config.timezone)),
+        signal_id=make_cli_signal_id(args.symbol, signal_time),
+        timestamp_local=signal_time,
         symbol=args.symbol,
         direction=OptionType.from_text(args.direction),
         signal_strike=args.strike,
@@ -95,6 +103,8 @@ def run_collect_signal(args: argparse.Namespace, config: AppConfig) -> int:
         provider=provider,
         config=config,
         duration_seconds=args.duration_seconds,
+        capture_start_time=capture_start_time,
+        capture_end_time=capture_end_time,
         run_folder=args.run_folder,
         quiet=args.quiet,
     )
@@ -104,6 +114,7 @@ def run_collect_signal(args: argparse.Namespace, config: AppConfig) -> int:
 
 def run_collect_file(args: argparse.Namespace, config: AppConfig) -> int:
     provider_name = config.provider_name(args.provider)
+    capture_start_time, capture_end_time = parse_capture_window(args, ZoneInfo(config.timezone))
     signals = read_signals_csv(args.signals_file, timezone=config.timezone, provider=provider_name)
     provider = provider_from_config(config, provider_name)
     run_folder = collect_signals(
@@ -111,6 +122,8 @@ def run_collect_file(args: argparse.Namespace, config: AppConfig) -> int:
         provider=provider,
         config=config,
         duration_seconds=args.duration_seconds,
+        capture_start_time=capture_start_time,
+        capture_end_time=capture_end_time,
         run_folder=args.run_folder,
         quiet=args.quiet,
     )
@@ -142,9 +155,18 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-def make_cli_signal_id(symbol: str, timezone: str) -> str:
-    now = datetime.now(ZoneInfo(timezone))
-    return f"{symbol.upper().lstrip('$')}_{now.strftime('%Y%m%d_%H%M%S')}"
+def parse_capture_window(args: argparse.Namespace, tz: ZoneInfo) -> tuple[datetime | None, datetime | None]:
+    if args.duration_seconds is not None and args.end_time:
+        raise ValueError("Use either --duration-seconds or --end-time, not both.")
+    start_time = parse_runtime_datetime(args.start_time, tz)
+    end_time = parse_runtime_datetime(args.end_time, tz)
+    if start_time and end_time and end_time <= start_time:
+        raise ValueError("--end-time must be after --start-time.")
+    return start_time, end_time
+
+
+def make_cli_signal_id(symbol: str, timestamp: datetime) -> str:
+    return f"{symbol.upper().lstrip('$')}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
 
 
 if __name__ == "__main__":

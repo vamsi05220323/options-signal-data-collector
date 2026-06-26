@@ -156,6 +156,32 @@ market_capture.sqlite
 
 If this works, the full collector flow works in mock mode.
 
+## Time Inputs
+
+The app timezone is controlled by `.env.local`:
+
+```text
+TIMEZONE=America/Chicago
+```
+
+That means bare times like `10:00` or `15:00` are treated as Texas/Central time. ISO timestamps with offsets also work:
+
+```text
+2026-06-26T10:00:00-05:00
+```
+
+Useful values:
+
+```text
+--signal-time now
+--signal-time 10:00
+--start-time now
+--end-time 15:00
+--end-time market-close
+```
+
+`--signal-time` records when the alert happened. `--start-time` and `--end-time` control when the collector actually pulls live data. If the signal was at 10:00 AM but the app starts at 1:54 PM, the collector starts with live data from 1:54 PM unless a historical backfill feature is added later.
+
 ## Step 3: Read The Summary
 
 Open:
@@ -328,6 +354,12 @@ Then run:
 
 ```powershell
 .\scripts\run.ps1 collect-file --signals-file data/sample_signals_today.csv --provider ibkr --duration-seconds 1800
+```
+
+For one IBKR signal with explicit time controls:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1 collect-signal --symbol MAN --direction PUT --strike 35 --expiry 2026-07-17 --stock-price 36.27 --provider ibkr --primary-exchange NYSE --signal-time 10:00 --start-time now --end-time market-close
 ```
 
 ## What The Application Actually Does

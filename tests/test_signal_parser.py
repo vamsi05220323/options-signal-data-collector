@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from src.engine.signal_parser import parse_expiry, parse_signal_text
+from src.engine.signal_parser import parse_expiry, parse_runtime_datetime, parse_signal_text
 from src.engine.signal_parser import read_signals_csv
 from src.models import OptionType
 
@@ -44,3 +44,12 @@ def test_signal_csv_accepts_optional_ibkr_identity_columns(tmp_path):
     assert signal.primary_exchange == "NASDAQ"
     assert signal.currency == "USD"
     assert signal.ibkr_con_id == 11054
+
+
+def test_runtime_datetime_accepts_now_time_only_and_market_close():
+    tz = ZoneInfo("America/Chicago")
+    now = datetime(2026, 6, 26, 13, 54, tzinfo=tz)
+
+    assert parse_runtime_datetime("now", tz, now=now) == now
+    assert parse_runtime_datetime("10:00", tz, now=now) == datetime(2026, 6, 26, 10, 0, tzinfo=tz)
+    assert parse_runtime_datetime("market-close", tz, now=now) == datetime(2026, 6, 26, 15, 0, tzinfo=tz)

@@ -34,6 +34,7 @@ Run commands through Python module execution:
 python -m src.main preflight --mock
 python -m src.main preflight --provider ibkr
 python -m src.main collect-signal --symbol BEAM --direction CALL --strike 40 --expiry 2026-07-17 --signal-premium 0.40 --stock-price 36.50
+python -m src.main collect-signal --symbol MAN --direction PUT --strike 35 --expiry 2026-07-17 --stock-price 36.27 --signal-time 10:00 --start-time now --end-time market-close
 python -m src.main collect-file --signals-file data/sample_signals_today.csv --provider mock --duration-seconds 30
 python -m src.main summarize --run-folder data/runs/YYYY-MM-DD
 python -m src.main replay --run-folder data/runs/YYYY-MM-DD
@@ -92,7 +93,7 @@ python -m src.main preflight --provider ibkr
 For each signal:
 
 1. `src/main.py` parses CLI arguments.
-2. `src/engine/signal_parser.py` parses CSV rows or signal text into `TradeSignal`.
+2. `src/engine/signal_parser.py` parses CSV rows, signal text, and runtime time controls into `TradeSignal` plus capture windows.
 3. `src/main.py` creates the selected provider.
 4. `src/engine/capture_manager.py` starts collection.
 5. The provider resolves broker contract identity when supported. In IBKR mode this stores the resolved stock conId, primary exchange, currency, local symbol, and trading class in the signal row.
@@ -310,7 +311,7 @@ Engine package marker.
 
 `src/engine/signal_parser.py`
 
-Parses signal text, expiry strings, local timestamps, and signal CSV files.
+Parses signal text, expiry strings, local timestamps, runtime time controls, and signal CSV files. Runtime time controls accept `now`, `current`, time-only values like `10:00`, `market-open`, `market-close`, and ISO datetimes.
 
 `src/engine/strike_selector.py`
 

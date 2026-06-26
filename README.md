@@ -42,8 +42,16 @@ IBKR assumes TWS or IB Gateway is already open and manually logged in. Enable AP
 Single signal:
 
 ```powershell
-.\scripts\run.ps1 collect-signal --symbol BEAM --direction CALL --strike 40 --expiry 2026-07-17 --signal-premium 0.40 --stock-price 36.50 --provider mock --duration-seconds 30
+powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1 collect-signal --symbol BEAM --direction CALL --strike 40 --expiry 2026-07-17 --signal-premium 0.40 --stock-price 36.50 --provider mock --duration-seconds 30
 ```
+
+Single signal with explicit signal/start/end times:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1 collect-signal --symbol MAN --direction PUT --strike 35 --expiry 2026-07-17 --stock-price 36.27 --provider ibkr --primary-exchange NYSE --signal-time 10:00 --start-time now --end-time market-close
+```
+
+When a time has no timezone offset, the app uses `TIMEZONE` from `.env.local`. The default project timezone is `America/Chicago`, which is Texas/Central time.
 
 CSV file:
 

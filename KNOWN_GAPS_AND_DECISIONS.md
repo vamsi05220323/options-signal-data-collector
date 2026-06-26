@@ -125,6 +125,50 @@ news_skip_warning
 
 This changes output visibility only. It does not change the ranking formula.
 
+## Implemented: Signal Time And Capture Window Controls
+
+Single-signal CLI mode originally used the current time as the signal timestamp. That was not enough for real alerts that are entered after they happened.
+
+Implemented controls:
+
+```text
+--signal-time
+--start-time
+--end-time
+```
+
+Supported values:
+
+```text
+now
+current
+10:00
+15:00
+market-open
+market-close
+2026-06-26T10:00:00-05:00
+```
+
+Behavior:
+
+- `--signal-time` records when the alert happened.
+- `--start-time` controls when live collection begins.
+- `--end-time` controls when live collection stops.
+- Bare times use the configured `.env.local` timezone. Current default is `America/Chicago`.
+- These controls do not backfill historical morning bid/ask data. They only schedule live collection and preserve the true signal timestamp.
+
+## Implemented: Stop Retrying Invalid Option Contracts
+
+During a live MAN test, IBKR rejected some far opposite-side option contracts with error 200/no security definition.
+
+Fix:
+
+If provider qualification fails for a selected option contract during a run, that contract is skipped for the rest of the run instead of being retried every polling loop.
+
+Ranking impact:
+
+No ranking formula change. The skipped contract simply has no quote rows and therefore cannot become a ranked opportunity.
+
 ## Current Known Gap: Expiration And Trading Class Ambiguity
 
 IBKR can have multiple option trading classes or expiration classes for the same apparent symbol/date. The app now stores qualified option identity after quote qualification, but the chain-selection step still chooses by standard symbol, expiry, strike, and right.
