@@ -23,6 +23,10 @@ def validate_quote(
     open_interest: int | None = None,
     quote_age_seconds: float | None = None,
     stale_quote_seconds: int = 900,
+    crossed_market_flag: bool = False,
+    locked_market_flag: bool = False,
+    allow_locked_market: bool = False,
+    intrinsic_violation_flag: bool = False,
 ) -> QuoteValidation:
     reasons: list[str] = []
     if bid is None:
@@ -41,6 +45,12 @@ def validate_quote(
         reasons.append("spread_too_wide")
     if _is_fake_penny_wide_quote(bid, ask):
         reasons.append("penny_bid_wide_ask")
+    if crossed_market_flag:
+        reasons.append("crossed_market")
+    if locked_market_flag and not allow_locked_market:
+        reasons.append("locked_market")
+    if intrinsic_violation_flag:
+        reasons.append("intrinsic_violation")
     if quote_age_seconds is not None and quote_age_seconds > stale_quote_seconds:
         reasons.append("stale_quote")
     if role is not ContractRole.LOTTO_OBSERVATION_ONLY:

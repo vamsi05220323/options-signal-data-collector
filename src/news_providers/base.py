@@ -82,6 +82,9 @@ def summarize_news(signal: TradeSignal, provider_name: str, articles: list[NewsA
     catalyst = next((article.catalyst_type for article in within_24h if article.catalyst_type != "UNKNOWN"), "UNKNOWN")
     bias = infer_news_bias(signal.direction, len(positives), len(negatives), len(within_24h))
     score = score_news_context(bias)
+    provider_key = provider_name.strip().lower()
+    affects_score = provider_key in {"alpha_vantage", "finnhub"}
+    source_confidence = "EXTERNAL" if affects_score else ("MOCK" if provider_key == "mock" else "UNAVAILABLE")
     warning = ""
     if signal.direction is OptionType.CALL and bias == "POSITIVE_FOR_CALL":
         warning = "positive_recent_news_supports_call_signal"
@@ -108,8 +111,39 @@ def summarize_news(signal: TradeSignal, provider_name: str, articles: list[NewsA
         catalyst_type=catalyst,
         news_bias=bias,
         news_score=score,
+        news_score_effective=score if affects_score else None,
+        news_source_confidence=source_confidence,
+        news_affects_score=affects_score,
         news_skip_warning=warning,
         news_notes="News is context only; bid/ask execution data remains primary.",
+    )
+
+
+def unavailable_news_summary(signal: TradeSignal, notes: str) -> NewsSummary:
+    return NewsSummary(
+        signal_id=signal.signal_id,
+        symbol=signal.symbol,
+        signal_timestamp_local=signal.timestamp_local,
+        news_provider="NEWS_UNAVAILABLE",
+        news_count_24h=0,
+        news_count_7d=0,
+        latest_news_age_minutes=None,
+        positive_news_count_24h=0,
+        negative_news_count_24h=0,
+        neutral_news_count_24h=0,
+        avg_sentiment_24h=None,
+        avg_relevance_24h=None,
+        top_sources_24h="",
+        top_headlines_24h="",
+        catalyst_detected=False,
+        catalyst_type="UNKNOWN",
+        news_bias="NO_NEWS",
+        news_score=0.0,
+        news_score_effective=None,
+        news_source_confidence="UNAVAILABLE",
+        news_affects_score=False,
+        news_skip_warning="news_unavailable",
+        news_notes=notes,
     )
 
 

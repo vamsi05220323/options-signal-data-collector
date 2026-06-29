@@ -13,7 +13,21 @@ def compute_mid(bid: float | None, ask: float | None) -> float | None:
 def compute_spread_abs(bid: float | None, ask: float | None) -> float | None:
     if bid is None or ask is None:
         return None
-    return max(ask - bid, 0.0)
+    return abs(ask - bid)
+
+
+def compute_raw_spread_abs(bid: float | None, ask: float | None) -> float | None:
+    if bid is None or ask is None:
+        return None
+    return ask - bid
+
+
+def crossed_market(bid: float | None, ask: float | None) -> bool:
+    return bool(bid is not None and ask is not None and bid > ask)
+
+
+def locked_market(bid: float | None, ask: float | None) -> bool:
+    return bool(bid is not None and ask is not None and bid == ask)
 
 
 def compute_spread_pct(bid: float | None, ask: float | None, mid: float | None = None) -> float | None:
@@ -37,6 +51,30 @@ def extrinsic_value(mid: float | None, intrinsic: float | None) -> float | None:
     if mid is None or intrinsic is None:
         return None
     return max(mid - intrinsic, 0.0)
+
+
+def raw_extrinsic_value(mid: float | None, intrinsic: float | None) -> float | None:
+    if mid is None or intrinsic is None:
+        return None
+    return mid - intrinsic
+
+
+def intrinsic_violation(
+    intrinsic: float | None,
+    mid: float | None,
+    last: float | None,
+    tolerance_abs: float,
+    tolerance_pct: float,
+) -> tuple[bool, float | None, float | None]:
+    if intrinsic is None or intrinsic <= 0:
+        return False, 0.0 if intrinsic == 0 else None, 0.0 if intrinsic == 0 else None
+    values = [value for value in (mid, last) if value is not None and value >= 0]
+    if not values:
+        return False, None, None
+    amount = max(intrinsic - value for value in values)
+    pct = amount / intrinsic * 100.0
+    threshold = max(tolerance_abs, intrinsic * tolerance_pct / 100.0)
+    return amount > threshold, max(amount, 0.0), max(pct, 0.0)
 
 
 def percent_change(current: float | None, base: float | None) -> float | None:

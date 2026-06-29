@@ -43,6 +43,7 @@ class SignalStatus(str, Enum):
     WATCH = "WATCH"
     INVALID_QUOTE = "INVALID_QUOTE"
     SKIP_CANDIDATE = "SKIP_CANDIDATE"
+    FAILED = "FAILED"
 
 
 @dataclass(slots=True)
@@ -176,6 +177,13 @@ class StockQuote:
     volume: int | None
     provider: str
     quote_timestamp: datetime | None = None
+    stock_price_source: str = "PROVIDER_LAST"
+    stock_quote_status: str = "VALID"
+    fallback_used: bool = False
+    quote_is_live: bool = False
+    market_data_type: str = "unknown"
+    quote_source_timestamp: datetime | None = None
+    quote_age_seconds: float | None = None
 
     def __post_init__(self) -> None:
         self.symbol = normalize_symbol(self.symbol)
@@ -201,6 +209,8 @@ class OptionQuote:
     ask_size: int | None = None
     quote_timestamp: datetime | None = None
     quote_age_seconds: float | None = None
+    market_data_type: str = "unknown"
+    quote_source_timestamp: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -220,6 +230,13 @@ class StockTick:
     stock_change_from_signal_pct: float | None
     pump_from_signal_pct: float | None
     pullback_from_high_pct: float | None
+    stock_price_source: str
+    stock_quote_status: str
+    fallback_used: bool
+    stock_quote_is_live: bool
+    market_data_type: str
+    quote_source_timestamp: datetime | None
+    quote_age_seconds: float | None
 
 
 @dataclass(slots=True)
@@ -249,11 +266,21 @@ class OptionTick:
     vega: float | None
     bid_size: int | None
     ask_size: int | None
+    raw_spread_abs: float | None
     spread_abs: float | None
     spread_pct: float | None
+    crossed_market_flag: bool
+    locked_market_flag: bool
     intrinsic_value: float | None
+    raw_extrinsic_value: float | None
     extrinsic_value: float | None
+    intrinsic_violation_flag: bool
+    intrinsic_violation_amount: float | None
+    intrinsic_violation_pct: float | None
+    intrinsic_validation_confidence: str
+    market_data_type: str
     quote_timestamp: datetime | None
+    quote_source_timestamp: datetime | None
     quote_age_seconds: float | None
     quote_is_valid: bool
     reason_invalid: str
@@ -308,8 +335,28 @@ class NewsSummary:
     catalyst_type: str
     news_bias: str
     news_score: float
+    news_score_effective: float | None
+    news_source_confidence: str
+    news_affects_score: bool
     news_skip_warning: str
     news_notes: str
+
+
+@dataclass(slots=True)
+class ProviderErrorRecord:
+    timestamp_local: datetime
+    signal_id: str
+    underlying_symbol: str
+    option_symbol: str
+    intended_contract: str
+    contract_role: str
+    failure_stage: str
+    provider: str
+    provider_error_code: str
+    provider_error_message: str
+    market_data_type: str
+    quote_source_timestamp: datetime | None
+    quote_age_seconds: float | None
 
 
 def normalize_symbol(value: str) -> str:

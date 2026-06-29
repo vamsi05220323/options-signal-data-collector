@@ -8,6 +8,11 @@ from src.models import OptionContract, OptionQuote, StockQuote, TradeSignal
 class ProviderError(RuntimeError):
     """Raised when a market data provider cannot return requested data."""
 
+    def __init__(self, message: str, *, code: str | int | None = None, market_data_type: str = "unknown") -> None:
+        super().__init__(message)
+        self.code = "" if code is None else str(code)
+        self.market_data_type = market_data_type
+
 
 class BaseDataProvider(ABC):
     name: str
@@ -17,6 +22,9 @@ class BaseDataProvider(ABC):
 
     def close(self) -> None:
         return None
+
+    def drain_diagnostics(self) -> list[dict[str, str]]:
+        return []
 
     def resolve_signal(self, signal: TradeSignal) -> TradeSignal:
         return signal

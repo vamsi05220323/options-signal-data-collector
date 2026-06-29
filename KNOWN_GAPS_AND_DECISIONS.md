@@ -1,5 +1,20 @@
 # Known Gaps And Development Decisions
 
+## 2026-06-28: Research False-Positive Blockers Fixed
+
+The blocker pass implemented and tested:
+
+1. Opposite-side scoring excludes `SIGNAL_CONTRACT`.
+2. Executable ask-to-bid return uses valid, fresh, non-crossed, non-locked, intrinsic-consistent rows only.
+3. Raw spread/extrinsic values and intrinsic-violation fields are retained.
+4. Stock fallback provenance and intrinsic-validation confidence are stored.
+5. IBKR market-data type/source timing and structured provider errors are captured when available.
+6. Mock/unavailable news cannot affect opportunity score.
+7. Signal and contract failures are isolated.
+8. Contract summaries include executable 40%, 50%, 100%, and 180% flags/times.
+
+The raw unfiltered return remains available only as `raw_unfiltered_ask_to_bid_return` for diagnostics. It is not used for opposite-side opportunity decisions.
+
 This file records issues discovered during setup, decisions made, and gaps that require approval before engine changes.
 
 ## Development Rule

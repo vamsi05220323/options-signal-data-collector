@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from src.models import OptionContract, OptionQuote, StockQuote, TradeSignal
@@ -26,6 +26,8 @@ class IBKRProvider(BaseDataProvider):
         self.ib = None
         self._stock_contracts: dict[str, object] = {}
         self._option_contracts: dict[str, object] = {}
+        self._diagnostics: list[dict[str, str]] = []
+        self._last_market_data_type = "unknown"
 
     def connect(self) -> None:
         if self.ib is not None and self.ib.isConnected():
@@ -35,6 +37,7 @@ class IBKRProvider(BaseDataProvider):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise ProviderError("ib_insync is not installed. Run: pip install ib_insync") from exc
         self.ib = IB()
+        self.ib.errorEvent += self._on_error
         try:
             self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=5, readonly=True)
         except Exception as exc:  # pragma: no cover - requires TWS/Gateway
@@ -43,6 +46,11 @@ class IBKRProvider(BaseDataProvider):
     def close(self) -> None:
         if self.ib is not None and self.ib.isConnected():
             self.ib.disconnect()
+
+    def drain_diagnostics(self) -> list[dict[str, str]]:
+        diagnostics = self._diagnostics[:]
+        self._diagnostics.clear()
+        return diagnostics
 
     def resolve_signal(self, signal: TradeSignal) -> TradeSignal:
         self.connect()
@@ -88,10 +96,35 @@ class IBKRProvider(BaseDataProvider):
         self.ib.sleep(1.0)
         bid = _clean_number(ticker.bid)
         ask = _clean_number(ticker.ask)
-        last = _clean_number(ticker.last) or _clean_number(ticker.close) or fallback_price
+        provider_last = _clean_number(ticker.last)
+        provider_close = _clean_number(ticker.close)
+        fallback_used = False
+        if provider_last is not None:
+            last = provider_last
+            price_source = "PROVIDER_LAST"
+        elif provider_close is not None:
+            last = provider_close
+            price_source = "PROVIDER_CLOSE_FALLBACK"
+            fallback_used = True
+        else:
+            last = fallback_price
+            price_source = "SIGNAL_PRICE_FALLBACK"
+            fallback_used = last is not None
         if last is None:
             raise ProviderError(f"IBKR stock quote has no usable price for {symbol}")
         now = self._now()
+        market_data_type = _market_data_type_name(getattr(ticker, "marketDataType", None))
+        self._last_market_data_type = market_data_type
+        source_timestamp, quote_age_seconds = _quote_timing(ticker, now)
+        quote_is_live = bool(not fallback_used and market_data_type == "live")
+        if fallback_used:
+            quote_status = "FALLBACK"
+        elif market_data_type == "live":
+            quote_status = "LIVE"
+        elif market_data_type in {"frozen", "delayed", "delayed_frozen"}:
+            quote_status = market_data_type.upper()
+        else:
+            quote_status = "UNKNOWN"
         return StockQuote(
             timestamp_local=now,
             symbol=(getattr(qualified_contract, "symbol", None) or symbol).upper(),
@@ -100,7 +133,14 @@ class IBKRProvider(BaseDataProvider):
             last=last,
             volume=_clean_int(ticker.volume),
             provider=self.name,
-            quote_timestamp=now,
+            quote_timestamp=source_timestamp,
+            stock_price_source=price_source,
+            stock_quote_status=quote_status,
+            fallback_used=fallback_used,
+            quote_is_live=quote_is_live,
+            market_data_type=market_data_type,
+            quote_source_timestamp=source_timestamp,
+            quote_age_seconds=quote_age_seconds,
         )
 
     def get_option_chain(
@@ -150,6 +190,14 @@ class IBKRProvider(BaseDataProvider):
         mid = (bid + ask) / 2 if bid is not None and ask is not None else None
         greeks = ticker.modelGreeks or ticker.bidGreeks or ticker.askGreeks
         now = self._now()
+        market_data_type = _market_data_type_name(getattr(ticker, "marketDataType", None))
+        self._last_market_data_type = market_data_type
+        source_timestamp, quote_age_seconds = _quote_timing(ticker, now)
+        volume_field = "callVolume" if contract.option_type.value == "CALL" else "putVolume"
+        open_interest_field = "callOpenInterest" if contract.option_type.value == "CALL" else "putOpenInterest"
+        volume = _clean_int(getattr(ticker, volume_field, None))
+        if volume is None:
+            volume = _clean_int(ticker.volume)
         return OptionQuote(
             timestamp_local=now,
             option_symbol=contract.storage_symbol,
@@ -157,8 +205,8 @@ class IBKRProvider(BaseDataProvider):
             ask=ask,
             mid=mid,
             last=last,
-            volume=_clean_int(ticker.volume),
-            open_interest=_clean_int(getattr(ticker, "putOpenInterest", None) or getattr(ticker, "callOpenInterest", None)),
+            volume=volume,
+            open_interest=_clean_int(getattr(ticker, open_interest_field, None)),
             implied_volatility=_clean_number(getattr(greeks, "impliedVol", None)) if greeks else None,
             delta=_clean_number(getattr(greeks, "delta", None)) if greeks else None,
             gamma=_clean_number(getattr(greeks, "gamma", None)) if greeks else None,
@@ -166,13 +214,26 @@ class IBKRProvider(BaseDataProvider):
             vega=_clean_number(getattr(greeks, "vega", None)) if greeks else None,
             bid_size=_clean_int(ticker.bidSize),
             ask_size=_clean_int(ticker.askSize),
-            quote_timestamp=now,
-            quote_age_seconds=0,
+            quote_timestamp=source_timestamp,
+            quote_age_seconds=quote_age_seconds,
+            market_data_type=market_data_type,
+            quote_source_timestamp=source_timestamp,
             provider=self.name,
         )
 
     def _now(self) -> datetime:
         return datetime.now(ZoneInfo(self.timezone))
+
+    def _on_error(self, _req_id, error_code, error_message, contract) -> None:
+        option_symbol = getattr(contract, "localSymbol", None) or getattr(contract, "symbol", None) or ""
+        self._diagnostics.append(
+            {
+                "provider_error_code": str(error_code),
+                "provider_error_message": str(error_message).replace("\r", " ").replace("\n", " "),
+                "market_data_type": self._last_market_data_type,
+                "option_symbol": str(option_symbol),
+            }
+        )
 
     def _make_stock_contract(self, symbol: str, exchange: str = "SMART", currency: str = "USD"):
         from ib_insync import Stock
@@ -323,3 +384,22 @@ def _clean_number(value) -> float | None:
 def _clean_int(value) -> int | None:
     number = _clean_number(value)
     return None if number is None else int(number)
+
+
+def _market_data_type_name(value) -> str:
+    try:
+        key = int(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    return {1: "live", 2: "frozen", 3: "delayed", 4: "delayed_frozen"}.get(key, "unknown")
+
+
+def _quote_timing(ticker, now: datetime) -> tuple[datetime | None, float | None]:
+    source = getattr(ticker, "rtTime", None) or getattr(ticker, "time", None)
+    if source is None:
+        return None, None
+    if source.tzinfo is None:
+        source = source.replace(tzinfo=timezone.utc)
+    source_local = source.astimezone(now.tzinfo)
+    age = max(0.0, (now - source_local).total_seconds())
+    return source_local, age

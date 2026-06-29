@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.config import AppConfig
-from src.engine.scoring import score_signal
+from src.engine.scoring import OPPOSITE_ROLES, score_signal
 from src.storage.csv_writer import (
     CONTRACT_SUMMARY_FIELDS,
     NEWS_SUMMARY_FIELDS,
@@ -48,6 +48,16 @@ def build_contract_summary(option_df: pd.DataFrame, config: AppConfig) -> list[d
     if option_df.empty:
         return []
     df = option_df.copy()
+    defaults = {
+        "quote_is_valid": False,
+        "quote_age_seconds": None,
+        "crossed_market_flag": False,
+        "locked_market_flag": False,
+        "intrinsic_violation_flag": True,
+    }
+    for column, default in defaults.items():
+        if column not in df:
+            df[column] = default
     for column in ["bid", "ask", "mid", "spread_pct", "compression_from_initial_pct", "rebound_from_low_pct"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
     df["timestamp_local"] = pd.to_datetime(df["timestamp_local"], errors="coerce")
@@ -56,17 +66,23 @@ def build_contract_summary(option_df: pd.DataFrame, config: AppConfig) -> list[d
     rows: list[dict] = []
     group_cols = ["signal_id", "underlying_symbol", "option_symbol", "contract_role", "expiry", "strike", "option_type"]
     for keys, group in df.sort_values("timestamp_local").groupby(group_cols, dropna=False):
+        valid_group = group[group["quote_is_valid_bool"]]
         min_mid = _safe_min(group["mid"])
         max_mid = _safe_max(group["mid"])
         min_ask = _safe_min(group["ask"])
         max_bid = _safe_max(group["bid"])
-        best_return, min_ask_time, max_bid_time = best_ask_to_future_bid(group)
+        raw_return, _raw_ask_time, _raw_bid_time = best_ask_to_future_bid(group, valid_only=False)
+        best_return, min_ask_time, max_bid_time, threshold_times = executable_return_analysis(
+            group,
+            stale_quote_seconds=config.stale_quote_seconds,
+            allow_locked_market=config.allow_locked_market,
+        )
         theoretical = None
         if min_mid is not None and min_mid > 0 and max_mid is not None:
             theoretical = max_mid / min_mid - 1.0
         valid_pct = float(group["quote_is_valid_bool"].mean() * 100.0) if len(group) else 0.0
-        median_spread = _safe_median(group["spread_pct"])
-        max_spread = _safe_max(group["spread_pct"])
+        median_spread = _safe_median(valid_group["spread_pct"])
+        max_spread = _safe_max(valid_group["spread_pct"])
         best_valid = bool(valid_pct >= 50 and (median_spread is None or median_spread <= config.wide_spread_max_pct))
         tradable = bool(best_return is not None and best_return > 0.20 and best_valid)
         row = dict(zip(group_cols, keys, strict=True))
@@ -77,16 +93,25 @@ def build_contract_summary(option_df: pd.DataFrame, config: AppConfig) -> list[d
                 "min_ask_after_signal": min_ask,
                 "max_bid_after_signal": max_bid,
                 "best_theoretical_mid_return": theoretical,
+                "raw_unfiltered_ask_to_bid_return": raw_return,
                 "best_conservative_ask_to_bid_return": best_return,
                 "time_of_min_ask": min_ask_time,
                 "time_of_max_bid_after_min_ask": max_bid_time,
-                "max_compression_pct": _safe_max(group["compression_from_initial_pct"]),
-                "max_rebound_pct": _safe_max(group["rebound_from_low_pct"]),
+                "max_compression_pct": _safe_max(valid_group["compression_from_initial_pct"]),
+                "max_rebound_pct": _safe_max(valid_group["rebound_from_low_pct"]),
                 "percentage_of_valid_quotes": valid_pct,
                 "median_spread_pct": median_spread,
                 "max_spread_pct": max_spread,
                 "best_quote_valid": best_valid,
                 "was_best_move_tradable": tradable,
+                "hit_40pct_executable": bool(threshold_times[0.40]),
+                "hit_50pct_executable": bool(threshold_times[0.50]),
+                "hit_100pct_executable": bool(threshold_times[1.00]),
+                "hit_180pct_executable": bool(threshold_times[1.80]),
+                "time_hit_40pct": threshold_times[0.40],
+                "time_hit_50pct": threshold_times[0.50],
+                "time_hit_100pct": threshold_times[1.00],
+                "time_hit_180pct": threshold_times[1.80],
             }
         )
         rows.append(_ordered(row, CONTRACT_SUMMARY_FIELDS))
@@ -105,6 +130,9 @@ def build_signal_summary(
     for _, signal in signals_df.iterrows():
         signal_id = signal["signal_id"]
         contracts = contract_df[contract_df["signal_id"] == signal_id] if not contract_df.empty else pd.DataFrame()
+        opposite_contracts = (
+            contracts[contracts["contract_role"].isin(OPPOSITE_ROLES)] if not contracts.empty else contracts
+        )
         stocks = stock_df[stock_df["signal_id"] == signal_id] if not stock_df.empty else pd.DataFrame()
         news_row = None
         if not news_df.empty:
@@ -115,8 +143,10 @@ def build_signal_summary(
         row = {
             "signal_id": signal_id,
             "symbol": signal["symbol"],
-            "best_contract_by_mid_return": _best_contract(contracts, "best_theoretical_mid_return"),
-            "best_contract_by_conservative_return": _best_contract(contracts, "best_conservative_ask_to_bid_return"),
+            "best_contract_by_mid_return": _best_contract(opposite_contracts, "best_theoretical_mid_return"),
+            "best_contract_by_conservative_return": _best_contract(
+                opposite_contracts, "best_conservative_ask_to_bid_return"
+            ),
             "best_ATM_or_OTM_contract": _best_contract(
                 contracts[contracts["contract_role"].isin(["ATM_OPPOSITE", "OTM_OPPOSITE"])]
                 if not contracts.empty
@@ -127,8 +157,8 @@ def build_signal_summary(
                 contracts[contracts["contract_role"] == "LOTTO_OBSERVATION_ONLY"] if not contracts.empty else contracts,
                 "best_conservative_ask_to_bid_return",
             ),
-            "number_of_valid_contracts": _count_valid_contracts(contracts),
-            "number_of_untradable_contracts": _count_untradable_contracts(contracts),
+            "number_of_valid_contracts": _count_valid_contracts(opposite_contracts),
+            "number_of_untradable_contracts": _count_untradable_contracts(opposite_contracts),
             "signal_direction_stock_result": stock_result,
             "opposite_side_opportunity_found": found,
             "opportunity_score": score,
@@ -180,7 +210,20 @@ def build_option_bars(option_df: pd.DataFrame, frequency: str) -> list[dict]:
     return rows
 
 
-def best_ask_to_future_bid(group: pd.DataFrame) -> tuple[float | None, str, str]:
+def best_ask_to_future_bid(
+    group: pd.DataFrame,
+    *,
+    valid_only: bool = True,
+    stale_quote_seconds: int = 900,
+    allow_locked_market: bool = False,
+) -> tuple[float | None, str, str]:
+    if valid_only:
+        best_return, ask_time, bid_time, _thresholds = executable_return_analysis(
+            group,
+            stale_quote_seconds=stale_quote_seconds,
+            allow_locked_market=allow_locked_market,
+        )
+        return best_return, ask_time, bid_time
     ordered = group.sort_values("timestamp_local").reset_index(drop=True)
     best_return: float | None = None
     best_ask_time = ""
@@ -201,6 +244,86 @@ def best_ask_to_future_bid(group: pd.DataFrame) -> tuple[float | None, str, str]
             bid_time = ordered.loc[best_future_idx, "timestamp_local"]
             best_bid_time = bid_time.isoformat() if pd.notna(bid_time) else ""
     return best_return, best_ask_time, best_bid_time
+
+
+def executable_return_analysis(
+    group: pd.DataFrame,
+    *,
+    stale_quote_seconds: int = 900,
+    allow_locked_market: bool = False,
+) -> tuple[float | None, str, str, dict[float, str]]:
+    ordered = group.sort_values("timestamp_local").reset_index(drop=True)
+    best_return: float | None = None
+    best_ask_time = ""
+    best_bid_time = ""
+    threshold_datetimes = {0.40: None, 0.50: None, 1.00: None, 1.80: None}
+    for entry_idx, entry in ordered.iterrows():
+        ask = _numeric_value(entry.get("ask"))
+        if ask is None or ask <= 0.01:
+            continue
+        if not _eligible_executable_row(entry, stale_quote_seconds, allow_locked_market):
+            continue
+        for exit_idx in range(entry_idx, len(ordered)):
+            exit_row = ordered.iloc[exit_idx]
+            bid = _numeric_value(exit_row.get("bid"))
+            if bid is None or bid <= 0:
+                continue
+            if not _eligible_executable_row(exit_row, stale_quote_seconds, allow_locked_market):
+                continue
+            candidate = bid / ask - 1.0
+            entry_time = entry.get("timestamp_local")
+            exit_time = exit_row.get("timestamp_local")
+            if best_return is None or candidate > best_return:
+                best_return = candidate
+                best_ask_time = entry_time.isoformat() if pd.notna(entry_time) else ""
+                best_bid_time = exit_time.isoformat() if pd.notna(exit_time) else ""
+            for threshold in threshold_datetimes:
+                current_hit = threshold_datetimes[threshold]
+                if candidate >= threshold and pd.notna(exit_time) and (current_hit is None or exit_time < current_hit):
+                    threshold_datetimes[threshold] = exit_time
+    threshold_times = {
+        threshold: hit.isoformat() if hit is not None else "" for threshold, hit in threshold_datetimes.items()
+    }
+    return best_return, best_ask_time, best_bid_time, threshold_times
+
+
+def _eligible_executable_row(row: pd.Series, stale_quote_seconds: int, allow_locked_market: bool) -> bool:
+    if not _bool_value(row.get("quote_is_valid")):
+        return False
+    age = _numeric_value(row.get("quote_age_seconds"))
+    if age is None or age > stale_quote_seconds:
+        return False
+    bid = _numeric_value(row.get("bid"))
+    ask = _numeric_value(row.get("ask"))
+    if bid is not None and ask is not None and bid > ask:
+        return False
+    if _bool_value(row.get("crossed_market_flag")):
+        return False
+    locked = bool(bid is not None and ask is not None and bid == ask) or _bool_value(row.get("locked_market_flag"))
+    if locked and not allow_locked_market:
+        return False
+    if _bool_value(row.get("intrinsic_violation_flag")):
+        return False
+    confidence = str(row.get("intrinsic_validation_confidence") or "UNKNOWN").strip().upper()
+    if confidence not in {"HIGH_LIVE", "MOCK"}:
+        return False
+    market_data_type = str(row.get("market_data_type") or "unknown").strip().lower()
+    if market_data_type not in {"live", "mock", "replay"}:
+        return False
+    return True
+
+
+def _numeric_value(value) -> float | None:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bool_value(value) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes"}
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -267,12 +390,18 @@ def _news_summary_columns(news_row: pd.Series | None) -> dict:
         "catalyst_type",
         "news_bias",
         "news_score",
+        "news_score_effective",
+        "news_source_confidence",
+        "news_affects_score",
         "top_headlines_24h",
         "news_skip_warning",
     ]
     if news_row is None:
         return {field: None for field in fields}
-    return {field: news_row.get(field) for field in fields}
+    return {
+        field: None if pd.isna(news_row.get(field)) else news_row.get(field)
+        for field in fields
+    }
 
 
 def _ordered(row: dict, fields: list[str]) -> dict:

@@ -64,6 +64,7 @@ stock_ticks.csv
 option_ticks.csv
 news_articles.csv
 news_summary_by_signal.csv
+provider_errors.csv
 option_5sec_bars.csv
 option_1min_bars.csv
 option_5min_bars.csv
@@ -105,9 +106,10 @@ For each signal:
    - ATM or nearest opposite contract.
    - Multiple OTM opposite contracts.
    - Optional lotto observation contracts.
-8. The capture loop writes stock ticks and option ticks. IBKR option ticks include option conId, local symbol, trading class, and exchange when available.
-9. News context is fetched once at signal entry.
-10. The summarizer builds contract summaries, signal summaries, and bars.
+8. The capture loop writes stock ticks and option ticks. IBKR rows include contract identity, market-data type, source timestamp when available, quote age, crossed/locked flags, stock-price provenance, and intrinsic-value validation fields.
+9. Provider, signal, and contract failures are written to `provider_errors.csv` and isolated so remaining signals/contracts continue.
+10. News context is fetched once at signal entry. Mock or unavailable news does not affect the score.
+11. The summarizer builds bars and valid-only contract/signal summaries. Opposite-side opportunity inputs exclude the original `SIGNAL_CONTRACT`.
 
 ## File-by-File Reference
 
@@ -323,9 +325,9 @@ Pure calculations:
 
 ```text
 mid
-spread absolute and spread percent
+raw and absolute spread, spread percent, crossed/locked state
 intrinsic value
-extrinsic value
+raw/nonnegative extrinsic value and intrinsic-violation tolerance
 percent change
 premium compression
 rebound from low
@@ -334,7 +336,7 @@ conservative ask-to-bid return
 
 `src/engine/quote_validation.py`
 
-Rule-based quote validation. Quotes are not discarded; invalid quotes are stored with `quote_is_valid=false` and a reason.
+Rule-based quote validation. Quotes are not discarded; invalid quotes are stored with `quote_is_valid=false` and a reason. Crossed markets, locked markets unless explicitly allowed, stale quotes, and intrinsic-value violations are rejected.
 
 `src/engine/capture_manager.py`
 
@@ -346,8 +348,9 @@ The main collection runtime. It:
 4. Polls stock and option quotes.
 5. Builds stock and option tick rows.
 6. Writes CSV and SQLite rows.
-7. Renders the live console.
-8. Calls summarization at the end of collection.
+7. Writes structured provider/signal/contract failures without aborting unaffected work.
+8. Renders the live console.
+9. Calls summarization at the end of collection.
 
 `src/engine/summarizer.py`
 
@@ -361,7 +364,7 @@ option_1min_bars.csv
 option_5min_bars.csv
 ```
 
-It calculates best theoretical mid return and best conservative ask-to-bid return. `summary_by_signal.csv` also carries the news fields used in ranking, including `news_score`, `news_bias`, `catalyst_type`, counts, and top headlines.
+It calculates best theoretical mid return, raw unfiltered ask-to-bid return, valid conservative ask-to-bid return, and executable 40%/50%/100%/180% threshold flags/times. `summary_by_signal.csv` carries news source confidence and whether news affected scoring.
 
 `src/engine/scoring.py`
 
@@ -373,7 +376,7 @@ Rule-based opportunity scoring from 0 to 100. The score is a ranking score, not 
 10% signal-side contract behavior
 ```
 
-Each signal is scored independently.
+Each signal is scored independently. Opposite-side opportunity inputs exclude `SIGNAL_CONTRACT`; that role is used only for signal-side weakening or confirmation.
 
 `src/engine/replay.py`
 
@@ -396,6 +399,8 @@ Creates and writes SQLite tables matching the CSV schemas. The database is store
 ```text
 data/runs/YYYY-MM-DD/market_capture.sqlite
 ```
+
+Structured provider errors are stored in both `provider_errors.csv` and the `provider_errors` SQLite table. Missing SQLite columns are added when the schema expands.
 
 ### Console UI
 
@@ -428,6 +433,14 @@ Tests invalid quote handling and lotto quote allowances.
 `tests/test_summarizer.py`
 
 Tests best future bid after earlier ask and contract-level tradability summary.
+
+`tests/test_blocker_fixes.py`
+
+Tests opposite-side isolation, valid-only executable returns, intrinsic violations, crossed/locked markets, threshold flags, mock-news score isolation, and API-key redaction.
+
+`tests/test_provider_resilience.py`
+
+Tests stock fallback provenance and multi-signal/contract failure isolation.
 
 `tests/test_scoring.py`
 

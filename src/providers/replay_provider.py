@@ -30,6 +30,14 @@ class ReplayProvider(BaseDataProvider):
             last=_float_or_none(row.get("stock_last")),
             volume=_int_or_none(row.get("stock_volume")),
             provider=self.name,
+            quote_timestamp=_datetime_or_none(row.get("quote_source_timestamp")),
+            stock_price_source=_text_or_default(row.get("stock_price_source"), "REPLAY"),
+            stock_quote_status=_text_or_default(row.get("stock_quote_status"), "REPLAY"),
+            fallback_used=_bool_or_false(row.get("fallback_used")),
+            quote_is_live=False,
+            market_data_type=_text_or_default(row.get("market_data_type"), "replay"),
+            quote_source_timestamp=_datetime_or_none(row.get("quote_source_timestamp")),
+            quote_age_seconds=_float_or_none(row.get("quote_age_seconds")),
         )
 
     def get_option_chain(
@@ -75,7 +83,10 @@ class ReplayProvider(BaseDataProvider):
             vega=_float_or_none(row.get("vega")),
             bid_size=_int_or_none(row.get("bid_size")),
             ask_size=_int_or_none(row.get("ask_size")),
+            quote_timestamp=_datetime_or_none(row.get("quote_source_timestamp")),
             quote_age_seconds=_float_or_none(row.get("quote_age_seconds")),
+            market_data_type=_text_or_default(row.get("market_data_type"), "replay"),
+            quote_source_timestamp=_datetime_or_none(row.get("quote_source_timestamp")),
             provider=self.name,
         )
 
@@ -95,3 +106,19 @@ def _float_or_none(value) -> float | None:
 def _int_or_none(value) -> int | None:
     number = _float_or_none(value)
     return None if number is None else int(number)
+
+
+def _datetime_or_none(value):
+    if value is None or pd.isna(value) or value == "":
+        return None
+    return pd.to_datetime(value).to_pydatetime()
+
+
+def _bool_or_false(value) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes"}
+
+
+def _text_or_default(value, default: str) -> str:
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return default
+    return str(value)

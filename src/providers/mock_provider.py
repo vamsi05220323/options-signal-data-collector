@@ -40,6 +40,13 @@ class MockProvider(BaseDataProvider):
             volume=100_000 + idx * 12_000,
             provider=self.name,
             quote_timestamp=now,
+            stock_price_source="MOCK_LAST",
+            stock_quote_status="MOCK",
+            fallback_used=False,
+            quote_is_live=False,
+            market_data_type="mock",
+            quote_source_timestamp=now,
+            quote_age_seconds=0,
         )
 
     def get_option_chain(
@@ -97,6 +104,8 @@ class MockProvider(BaseDataProvider):
             ask_size=7 + idx,
             quote_timestamp=now,
             quote_age_seconds=0,
+            market_data_type="mock",
+            quote_source_timestamp=now,
             provider=self.name,
         )
 

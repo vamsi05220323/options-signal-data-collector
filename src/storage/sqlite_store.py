@@ -5,13 +5,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.models import NewsArticle, NewsSummary, StockTick, OptionTick, TradeSignal, serialize_row
+from src.models import NewsArticle, NewsSummary, OptionTick, ProviderErrorRecord, StockTick, TradeSignal, serialize_row
 from src.storage.csv_writer import (
     CONTRACT_SUMMARY_FIELDS,
     NEWS_ARTICLE_FIELDS,
     NEWS_SUMMARY_FIELDS,
     OPTION_BAR_FIELDS,
     OPTION_TICK_FIELDS,
+    PROVIDER_ERROR_FIELDS,
     SIGNAL_FIELDS,
     SIGNAL_SUMMARY_FIELDS,
     STOCK_TICK_FIELDS,
@@ -30,6 +31,7 @@ TABLE_FIELDS = {
     "signal_summary": SIGNAL_SUMMARY_FIELDS,
     "news_articles": NEWS_ARTICLE_FIELDS,
     "news_summary_by_signal": NEWS_SUMMARY_FIELDS,
+    "provider_errors": PROVIDER_ERROR_FIELDS,
 }
 
 
@@ -51,6 +53,7 @@ class RunStorage:
             "signal_summary": CsvTable(self.run_folder / "summary_by_signal.csv", SIGNAL_SUMMARY_FIELDS),
             "news_articles": CsvTable(self.run_folder / "news_articles.csv", NEWS_ARTICLE_FIELDS),
             "news_summary_by_signal": CsvTable(self.run_folder / "news_summary_by_signal.csv", NEWS_SUMMARY_FIELDS),
+            "provider_errors": CsvTable(self.run_folder / "provider_errors.csv", PROVIDER_ERROR_FIELDS),
         }
 
     @classmethod
@@ -80,6 +83,9 @@ class RunStorage:
     def append_news_summary(self, summary: NewsSummary) -> None:
         self.append_row("news_summary_by_signal", serialize_row(summary))
 
+    def append_provider_error(self, error: ProviderErrorRecord) -> None:
+        self.append_row("provider_errors", serialize_row(error))
+
     def rewrite_table(self, table: str, rows: list[dict[str, Any]]) -> None:
         self.csv_tables[table].rewrite(rows)
         cursor = self.conn.cursor()
@@ -99,6 +105,10 @@ class RunStorage:
         for table, fields in TABLE_FIELDS.items():
             columns = ", ".join(f'"{field}" TEXT' for field in fields)
             cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({columns})")
+            existing = {row[1] for row in cursor.execute(f'PRAGMA table_info("{table}")')}
+            for field in fields:
+                if field not in existing:
+                    cursor.execute(f'ALTER TABLE "{table}" ADD COLUMN "{field}" TEXT')
         self.conn.commit()
 
     def _insert_sqlite(self, table: str, row: dict[str, Any]) -> None:

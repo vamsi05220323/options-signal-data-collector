@@ -10,6 +10,8 @@ conservative_return = best_future_bid / earlier_ask - 1
 
 That asks whether a contract could have been bought at the ask and later sold at the bid.
 
+The executable metric only uses individually valid, fresh, non-crossed, non-locked quotes without intrinsic-value violations. The original signal contract is excluded from opposite-side opportunity decisions.
+
 ## Install
 
 ```powershell
@@ -96,8 +98,11 @@ summary_by_contract.csv
 summary_by_signal.csv
 news_articles.csv
 news_summary_by_signal.csv
+provider_errors.csv
 market_capture.sqlite
 ```
+
+`summary_by_contract.csv` includes executable 40%, 50%, 100%, and 180% threshold flags and first-hit times. `raw_unfiltered_ask_to_bid_return` is retained for diagnostics only and must not be treated as executable.
 
 Summarize an existing run:
 
@@ -113,7 +118,7 @@ python -m src.main replay --run-folder data/runs/YYYY-MM-DD
 
 ## News Context
 
-News is a context/ranking filter, not a trade trigger. The collector supports mock news by default and has official Alpha Vantage and Finnhub provider modules. Yahoo/yfinance news is deliberately not enabled by default because it is an unofficial fallback.
+News is a context/ranking filter, not a trade trigger. The collector supports mock news for testing and has official Alpha Vantage and Finnhub provider modules. Mock news is explicitly non-scoring. A failed external provider is recorded as `NEWS_UNAVAILABLE` and is not replaced by scored mock news. Yahoo/yfinance news is deliberately not enabled by default because it is an unofficial fallback.
 
 The ranking formula is:
 

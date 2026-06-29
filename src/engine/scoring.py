@@ -3,6 +3,15 @@ from __future__ import annotations
 import pandas as pd
 
 
+OPPOSITE_ROLES = {
+    "EXACT_OPPOSITE",
+    "ITM_OPPOSITE",
+    "ATM_OPPOSITE",
+    "OTM_OPPOSITE",
+    "LOTTO_OBSERVATION_ONLY",
+}
+
+
 def score_signal(
     signal_id: str,
     contract_rows: pd.DataFrame,
@@ -12,11 +21,14 @@ def score_signal(
     if contract_rows.empty:
         return 0.0, "NO_DATA", False, "no_contract_rows"
 
-    best_return = _max_float(contract_rows.get("best_conservative_ask_to_bid_return"))
-    best_compression = _max_float(contract_rows.get("max_compression_pct"))
-    best_rebound = _max_float(contract_rows.get("max_rebound_pct"))
-    valid_contracts = int((pd.to_numeric(contract_rows["percentage_of_valid_quotes"], errors="coerce") >= 50).sum())
-    median_spread = pd.to_numeric(contract_rows["median_spread_pct"], errors="coerce").median()
+    opposite_rows = contract_rows[contract_rows["contract_role"].isin(OPPOSITE_ROLES)]
+    best_return = _max_float(opposite_rows.get("best_conservative_ask_to_bid_return"))
+    best_compression = _max_float(opposite_rows.get("max_compression_pct"))
+    best_rebound = _max_float(opposite_rows.get("max_rebound_pct"))
+    valid_contracts = int(
+        (pd.to_numeric(opposite_rows.get("percentage_of_valid_quotes"), errors="coerce") >= 50).sum()
+    )
+    median_spread = pd.to_numeric(opposite_rows.get("median_spread_pct"), errors="coerce").median()
 
     stock_result = classify_stock_result(stock_rows)
     microstructure = 0.0
@@ -30,12 +42,13 @@ def score_signal(
         microstructure += 10
     microstructure = min(microstructure, 100.0)
 
-    news_score = 50.0
-    if news_row is not None and "news_score" in news_row:
+    news_score = 0.0
+    if news_row is not None and _as_bool(news_row.get("news_affects_score")):
         try:
-            news_score = float(news_row["news_score"])
+            effective = news_row.get("news_score_effective")
+            news_score = 0.0 if pd.isna(effective) else float(effective)
         except (TypeError, ValueError):
-            news_score = 50.0
+            news_score = 0.0
 
     signal_side_score = score_signal_contract(contract_rows)
     total = microstructure * 0.70 + news_score * 0.20 + signal_side_score * 0.10
@@ -95,3 +108,7 @@ def _last_float(values) -> float | None:
         return None
     numeric = pd.to_numeric(values, errors="coerce").dropna()
     return None if numeric.empty else float(numeric.iloc[-1])
+
+
+def _as_bool(value) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes"}

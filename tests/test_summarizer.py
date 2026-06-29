@@ -11,9 +11,9 @@ def test_conservative_return_uses_future_bid_after_earlier_ask():
     ts = datetime(2026, 6, 25, 10, 0, tzinfo=ZoneInfo("America/Chicago"))
     group = pd.DataFrame(
         [
-            {"timestamp_local": ts, "ask": 1.00, "bid": 0.90},
-            {"timestamp_local": ts + timedelta(seconds=1), "ask": 0.70, "bid": 0.62},
-            {"timestamp_local": ts + timedelta(seconds=2), "ask": 1.80, "bid": 1.50},
+            _valid_quote(ts, ask=1.00, bid=0.90),
+            _valid_quote(ts + timedelta(seconds=1), ask=0.70, bid=0.62),
+            _valid_quote(ts + timedelta(seconds=2), ask=1.80, bid=1.50),
         ]
     )
     best_return, ask_time, bid_time = best_ask_to_future_bid(group)
@@ -42,6 +42,12 @@ def test_contract_summary_marks_tradable_move():
                 "compression_from_initial_pct": 50,
                 "rebound_from_low_pct": 100,
                 "quote_is_valid": "true",
+                "quote_age_seconds": 0,
+                "crossed_market_flag": False,
+                "locked_market_flag": False,
+                "intrinsic_violation_flag": False,
+                "intrinsic_validation_confidence": "HIGH_LIVE",
+                "market_data_type": "live",
             },
             {
                 "timestamp_local": (ts + timedelta(seconds=1)).isoformat(),
@@ -59,6 +65,12 @@ def test_contract_summary_marks_tradable_move():
                 "compression_from_initial_pct": 50,
                 "rebound_from_low_pct": 100,
                 "quote_is_valid": "true",
+                "quote_age_seconds": 0,
+                "crossed_market_flag": False,
+                "locked_market_flag": False,
+                "intrinsic_violation_flag": False,
+                "intrinsic_validation_confidence": "HIGH_LIVE",
+                "market_data_type": "live",
             },
         ]
     )
@@ -91,3 +103,18 @@ def test_signal_summary_exposes_news_ranking_inputs():
     assert rows[0]["news_score"] == 82
     assert rows[0]["news_bias"] == "BULLISH"
     assert rows[0]["top_headlines_24h"] == "BEAM catalyst update"
+
+
+def _valid_quote(timestamp, *, ask: float, bid: float) -> dict:
+    return {
+        "timestamp_local": timestamp,
+        "ask": ask,
+        "bid": bid,
+        "quote_is_valid": True,
+        "quote_age_seconds": 0,
+        "crossed_market_flag": False,
+        "locked_market_flag": False,
+        "intrinsic_violation_flag": False,
+        "intrinsic_validation_confidence": "HIGH_LIVE",
+        "market_data_type": "live",
+    }
